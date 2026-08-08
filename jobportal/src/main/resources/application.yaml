@@ -1,0 +1,56 @@
+spring:
+
+  application:
+    name: jobportal
+
+
+  datasource:
+
+    url: jdbc:postgresql://localhost:5432/jobportal
+
+    username: postgres
+
+    password: postgres123
+
+    driver-class-name: org.postgresql.Driver
+
+
+
+  jpa:
+
+    hibernate:
+
+      ddl-auto: update
+
+    show-sql: true
+
+
+    properties:
+
+      hibernate:
+
+        format_sql: true
+
+
+server:
+
+  port: 8080
+
+
+
+jwt:
+
+  secret-key: mySuperSecretKeyForJobPortalProjectKiwisoft123456
+
+  access-token-expiration: 900000
+
+  refresh-token-expiration: 604800000
+
+
+
+
+
+logging:
+  level:
+    org.springframework.security: TRACE
+    org.springframework.web: DEBUG

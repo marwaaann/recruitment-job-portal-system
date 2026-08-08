@@ -1,0 +1,14 @@
+# Frontend 
+jobportal-frontend/node_modules/
+jobportal-frontend/dist/
+
+# Backend
+jobportal/target/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
