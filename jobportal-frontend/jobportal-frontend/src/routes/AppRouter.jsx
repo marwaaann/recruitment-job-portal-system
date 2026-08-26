@@ -35,6 +35,8 @@ import EditUser from '../pages/Users/EditUser';
 
 import Settings from '../pages/Settings/Settings';
 
+import ChatPage from "../pages/Chat/ChatPage";
+
 export default function AppRouter() {
   return (
     <Routes>
@@ -94,6 +96,8 @@ export default function AppRouter() {
 
 
         <Route path="/settings" element={<Settings />} />
+
+        <Route path="/chat" element={<ChatPage />} />
 
 
 

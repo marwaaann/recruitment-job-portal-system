@@ -32,6 +32,12 @@ spring:
         format_sql: true
 
 
+        data:
+          redis:
+            host: localhost
+            port: 6379
+
+
 server:
 
   port: 8080
@@ -54,3 +60,5 @@ logging:
   level:
     org.springframework.security: TRACE
     org.springframework.web: DEBUG
+
+

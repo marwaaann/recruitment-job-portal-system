@@ -69,6 +69,9 @@ public class SecurityConfig {
                         .requestMatchers("/api/csrf")
                         .permitAll()
 
+                        .requestMatchers("/ws-chat/**")
+                        .authenticated()
+
                         // ================= SUPER ADMIN =================
                         .requestMatchers("/api/admins/**")
                         .hasRole("SUPER_ADMIN")

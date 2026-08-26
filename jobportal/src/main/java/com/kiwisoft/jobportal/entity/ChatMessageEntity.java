@@ -1,0 +1,33 @@
+package com.kiwisoft.jobportal.entity;
+
+import jakarta.persistence.*;
+import lombok.*;
+
+import java.time.LocalDateTime;
+
+@Entity
+@Table(name = "chat_messages")
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class ChatMessageEntity {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    private String sender;
+
+    private String receiver;
+
+    @Column(columnDefinition = "TEXT")
+    private String message;
+
+    private boolean seen = false;
+
+    private boolean delivered = false;
+
+    private LocalDateTime sentAt;
+}
