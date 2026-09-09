@@ -5,6 +5,8 @@ import Dashboard from "../pages/Dashboard/Dashboard";
 
 import Jobs from "../pages/Jobs/Jobs";
 import CreateJob from "../pages/Jobs/CreateJob";
+import JobDetails from "../pages/Jobs/JobDetails";
+import EditJob from "../pages/Jobs/EditJob";
 
 import Clients from "../pages/Clients/Clients";
 import CreateClient from "../pages/Clients/CreateClient";
@@ -55,6 +57,8 @@ export default function AppRouter() {
 
         <Route path="/jobs" element={<Jobs />} />
         <Route path="/jobs/create" element={<CreateJob />} />
+        <Route path="/jobs/:id" element={<JobDetails />} />
+        <Route path="/jobs/edit/:id" element={<EditJob />} />
 
 
 
