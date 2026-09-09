@@ -95,13 +95,6 @@ export default function Sidebar() {
             <span>Candidates</span>
           </NavLink>
           <NavLink
-            to="/jobs"
-            className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-all"
-          >
-            <span className="material-symbols-outlined text-[20px]">description</span>
-            <span>Applications</span>
-          </NavLink>
-          <NavLink
             to="/pipeline"
             className={({ isActive }) =>
               `flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
@@ -113,20 +106,6 @@ export default function Sidebar() {
           >
             <span className="material-symbols-outlined text-[20px]">view_kanban</span>
             <span>Pipeline</span>
-          </NavLink>
-          <NavLink
-            to="/dashboard"
-            className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-all"
-          >
-            <span className="material-symbols-outlined text-[20px]">calendar_today</span>
-            <span>Interviews</span>
-          </NavLink>
-          <NavLink
-            to="/dashboard"
-            className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-all"
-          >
-            <span className="material-symbols-outlined text-[20px]">verified</span>
-            <span>Offers</span>
           </NavLink>
         </nav>
 

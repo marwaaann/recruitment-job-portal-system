@@ -24,3 +24,13 @@ export const closeJob = async (id) => {
     const res = await api.post(`/jobs/${id}/close`);
     return res.data;
 };
+
+export const assignPartnerToJob = async (jobId, partnerId) => {
+    const res = await api.post(`/jobs/${jobId}/assign-partner`, { partnerId: Number(partnerId) });
+    return res.data;
+};
+
+export const getApplicationsByJob = async (jobId) => {
+    const res = await api.get(`/jobs/${jobId}/applications`);
+    return res.data;
+};

@@ -104,6 +104,9 @@ export default function AppRouter() {
         <Route path="/settings" element={<Settings />} />
 
         <Route path="/pipeline" element={<Pipeline />} />
+        <Route path="/applications" element={<Pipeline />} />
+        <Route path="/interviews" element={<Pipeline />} />
+        <Route path="/offers" element={<Pipeline />} />
         <Route path="/messages" element={<Messages />} />
         <Route path="/chat" element={<Messages />} />
 
