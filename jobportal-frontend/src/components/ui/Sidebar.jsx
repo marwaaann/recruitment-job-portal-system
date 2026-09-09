@@ -102,8 +102,14 @@ export default function Sidebar() {
             <span>Applications</span>
           </NavLink>
           <NavLink
-            to="/dashboard"
-            className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-all"
+            to="/pipeline"
+            className={({ isActive }) =>
+              `flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                isActive
+                  ? "bg-primary-container text-on-primary shadow-sm"
+                  : "text-on-surface-variant hover:bg-surface-container hover:text-on-surface"
+              }`
+            }
           >
             <span className="material-symbols-outlined text-[20px]">view_kanban</span>
             <span>Pipeline</span>
@@ -193,7 +199,7 @@ export default function Sidebar() {
             Communication
           </div>
           <NavLink
-            to="/chat"
+            to="/messages"
             className={({ isActive }) =>
               `flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium transition-all ${
                 isActive

@@ -36,6 +36,8 @@ import UserDetails from '../pages/Users/UserDetails';
 import EditUser from '../pages/Users/EditUser';
 
 import Settings from '../pages/Settings/Settings';
+import Pipeline from "../pages/Pipeline/Pipeline";
+import Messages from "../pages/Messages/Messages";
 
 import ChatPanel from "../components/chat/ChatPanel";
 
@@ -101,7 +103,9 @@ export default function AppRouter() {
 
         <Route path="/settings" element={<Settings />} />
 
-        <Route path="/chat" element={<ChatPanel embedded onClose={() => window.history.back()} />} />
+        <Route path="/pipeline" element={<Pipeline />} />
+        <Route path="/messages" element={<Messages />} />
+        <Route path="/chat" element={<Messages />} />
 
 
 
