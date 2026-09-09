@@ -3,6 +3,7 @@ jobportal-frontend/node_modules/
 jobportal-frontend/dist/
 
 # Backend
+jobportal/target/
 jobportal-backend/target/
 
 # IDE
