@@ -59,8 +59,9 @@ api.interceptors.request.use(
     if (savedUser) {
       try {
         const parsed = JSON.parse(savedUser);
-        if (parsed?.token && !config.headers["Authorization"]) {
-          config.headers["Authorization"] = `Bearer ${parsed.token}`;
+        const token = parsed?.accessToken || parsed?.token;
+        if (token && !config.headers["Authorization"]) {
+          config.headers["Authorization"] = `Bearer ${token}`;
         }
       } catch (e) {
         // ignore JSON parse errors

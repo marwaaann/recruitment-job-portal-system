@@ -54,12 +54,16 @@ public class JwtFilter extends OncePerRequestFilter {
         String token = null;
         String email = null;
 
-        if (request.getCookies() != null) {
+        // 1. Check Authorization Bearer header (essential for cross-origin SPA)
+        String authHeader = request.getHeader("Authorization");
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            token = authHeader.substring(7);
+        }
 
+        // 2. Fallback to accessToken cookie
+        if (token == null && request.getCookies() != null) {
             for (Cookie cookie : request.getCookies()) {
-
                 if ("accessToken".equals(cookie.getName())) {
-
                     token = cookie.getValue();
                     break;
                 }
@@ -67,9 +71,7 @@ public class JwtFilter extends OncePerRequestFilter {
         }
 
         if (token != null) {
-
             email = jwtUtil.extractEmail(token);
-
         }
 
         if (
