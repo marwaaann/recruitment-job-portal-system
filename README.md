@@ -1,4 +1,4 @@
-﻿<div align="center">
+<div align="center">
 
 # 💼 Recruitment & Job Portal System (Kinetic ATS)
 
@@ -11,6 +11,8 @@
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-4.x-38B2AC.svg?logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15%2B-336791.svg?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 [![WebSocket](https://img.shields.io/badge/WebSocket-STOMP-blueviolet.svg?logo=socketdotio&logoColor=white)](https://stomp.github.io/)
+[![Render](https://img.shields.io/badge/Backend-Render-46E3B7.svg?logo=render&logoColor=white)](https://recruitment-job-portal-system.onrender.com)
+[![Vercel](https://img.shields.io/badge/Frontend-Vercel-black.svg?logo=vercel&logoColor=white)](https://recruitment-job-portal-system.vercel.app)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 <p align="center">
@@ -21,8 +23,21 @@
 
 ---
 
+## 🌐 Live Deployments & Demo
+
+| Service | Provider | Live URL | Status |
+| :--- | :--- | :--- | :--- |
+| **Frontend Web App** | **Vercel** | [recruitment-job-portal-system.vercel.app](https://recruitment-job-portal-system.vercel.app) | ![Vercel](https://img.shields.io/badge/Vercel-Live-success?logo=vercel&logoColor=white) |
+| **Backend REST & WS API** | **Render** | [recruitment-job-portal-system.onrender.com](https://recruitment-job-portal-system.onrender.com) | ![Render](https://img.shields.io/badge/Render-Live-success?logo=render&logoColor=white) |
+| **Cloud Database** | **Neon PostgreSQL** | Serverless PostgreSQL (AWS us-east-2) | ![Neon](https://img.shields.io/badge/Neon-Connected-00E599?logo=postgresql&logoColor=white) |
+
+> ℹ️ **Note on Cold Starts**: The backend API is hosted on Render's free tier. If the instance has spun down due to inactivity, the initial request may take ~30–50 seconds to boot up. Subsequent interactions are fast.
+
+---
+
 ## 📑 Table of Contents
 
+- [Live Deployments & Demo](#-live-deployments--demo)
 - [Key Features](#-key-features)
 - [System Architecture](#-system-architecture)
 - [Tech Stack](#-tech-stack)
@@ -35,7 +50,8 @@
   - [Backend Setup](#backend-setup)
   - [Frontend Setup](#frontend-setup)
 - [Deployment Guide](#-deployment-guide)
-  - [Cloud Deployment (Railway + Vercel)](#cloud-deployment-railway--vercel)
+  - [Cloud Production Deployment (Render + Neon + Vercel)](#cloud-production-deployment-render--neon--vercel)
+  - [Alternative: Railway + Vercel](#alternative-railway--vercel)
   - [Docker Deployment](#docker-deployment)
 - [Environment Variables](#-environment-variables)
 - [Author & Credits](#-author--credits)
@@ -255,7 +271,40 @@ npm run dev
 
 ## 🚀 Deployment Guide
 
-### Cloud Deployment (Railway + Vercel)
+### Cloud Production Deployment (Render + Neon + Vercel)
+
+The live production deployment is orchestrated across **Render** (Backend Docker Container), **Neon** (Serverless PostgreSQL), and **Vercel** (Frontend Edge SPA).
+
+#### 1. Database Provisioning (Neon PostgreSQL)
+1. Create a serverless PostgreSQL database at **[Neon.tech](https://neon.tech)**.
+2. Note your database connection credentials:
+   - Host: `ep-*-pooler.<region>.aws.neon.tech`
+   - Database: `neondb`
+   - User: `neondb_owner`
+   - Parameter: `sslmode=require`
+
+#### 2. Backend Web Service (Render)
+1. Connect your repository on **[Render.com](https://render.com)** as a **Web Service**.
+2. Select **Docker** environment (Render automatically detects [`jobportal/Dockerfile`](jobportal/Dockerfile)):
+   - **Root Directory**: `jobportal`
+   - **Docker Command / Context**: defaults
+3. Configure Environment Variables in Render Dashboard:
+   - `SPRING_DATASOURCE_URL` = `jdbc:postgresql://<neon-host>/neondb?sslmode=require`
+   - `SPRING_DATASOURCE_USERNAME` = `<neon-user>`
+   - `SPRING_DATASOURCE_PASSWORD` = `<neon-password>`
+   - `JWT_SECRET_KEY` = `<strong-secret-key-min-32-chars>`
+   - `CORS_ALLOWED_ORIGINS` = `https://recruitment-job-portal-system.vercel.app,http://localhost:5173`
+4. Deploy the service.
+
+#### 3. Frontend Web App (Vercel)
+1. Import the repository on **[Vercel](https://vercel.com)**.
+2. Set **Root Directory** to `jobportal-frontend`.
+3. Set **Framework Preset** to `Vite`.
+4. Configure Environment Variable:
+   - `VITE_API_BASE_URL` = `https://recruitment-job-portal-system.onrender.com`
+5. Deploy. (Single-page app rewrites are automatically governed by [`vercel.json`](jobportal-frontend/vercel.json)).
+
+### Alternative: Railway + Vercel
 
 #### Backend on Railway:
 1. Connect your repository to **[Railway](https://railway.app)**.
@@ -269,12 +318,9 @@ npm run dev
    - `JWT_SECRET_KEY=your_production_secret_key`
 
 #### Frontend on Vercel:
-1. Import the repository on **[Vercel](https://vercel.com)**.
-2. Set **Root Directory** to `jobportal-frontend`.
-3. Set **Framework Preset** to `Vite`.
-4. Add Environment Variable:
-   - `VITE_API_BASE_URL=https://your-backend.up.railway.app`
-5. Click **Deploy**.
+1. Import repository on **[Vercel](https://vercel.com)**, set root directory to `jobportal-frontend`.
+2. Add Environment Variable: `VITE_API_BASE_URL=https://your-backend.up.railway.app`.
+3. Deploy.
 
 ---
 
