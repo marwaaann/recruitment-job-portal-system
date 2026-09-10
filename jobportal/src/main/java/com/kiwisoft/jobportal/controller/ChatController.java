@@ -19,6 +19,12 @@ public class ChatController {
 
     private final ChatService chatService;
     private final UserRepository userRepository;
+    private final com.kiwisoft.jobportal.config.ChatPresenceListener chatPresenceListener;
+
+    @GetMapping("/presence")
+    public java.util.Map<String, Boolean> getOnlineUsers() {
+        return chatPresenceListener.getOnlineUsers();
+    }
 
     @MessageMapping("/send")
     public void send(ChatMessage message) {

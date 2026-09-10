@@ -1,98 +1,201 @@
-import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-import { getAdminById } from "../../services/adminService";
-import { Mail, Shield, CheckCircle, User } from "lucide-react";
+import { useState, useEffect } from "react";
+import { useParams, useNavigate, Link } from "react-router-dom";
+import {
+  Shield,
+  ArrowLeft,
+  Mail,
+  Trash2,
+  Pencil,
+  AlertCircle,
+  User,
+} from "lucide-react";
+import useAuth from "../../hooks/useAuth";
+import { getAdminById, deleteAdmin } from "../../services/adminService";
+import Button from "../../components/common/Button";
+import Badge from "../../components/common/Badge";
+import Card, {
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+} from "../../components/common/Card";
+import ConfirmDialog from "../../components/common/ConfirmDialog";
+import { CardSkeleton } from "../../components/common/SkeletonLoader";
+import { useToast } from "../../components/common/Toast";
 
 export default function AdminDetails() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { isSuperAdmin } = useAuth();
+  const { success, error: toastError } = useToast();
 
   const [admin, setAdmin] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    loadAdmin();
-  }, [id]);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const loadAdmin = async () => {
+    setLoading(true);
     try {
       const data = await getAdminById(id);
       setAdmin(data);
     } catch (err) {
-      console.error(err);
-      alert("Unable to load admin details.");
+      console.error("Failed to load admin:", err);
+      toastError("Unable to retrieve administrator profile.");
     } finally {
       setLoading(false);
     }
   };
 
-  if (loading) return <h2>Loading...</h2>;
+  useEffect(() => {
+    loadAdmin();
+  }, [id]);
 
-  if (!admin) return <h2>Admin not found</h2>;
+  const handleDeleteAdmin = async () => {
+    setDeleting(true);
+    try {
+      await deleteAdmin(id);
+      success("Administrator account removed.");
+      navigate("/admins");
+    } catch (err) {
+      toastError(err.response?.data?.message || "Failed to delete administrator.");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="max-w-3xl mx-auto space-y-6">
+        <div className="h-6 w-36 bg-slate-200 rounded animate-pulse" />
+        <CardSkeleton rows={4} />
+      </div>
+    );
+  }
+
+  if (!admin) {
+    return (
+      <div className="max-w-xl mx-auto py-12 text-center">
+        <div className="w-12 h-12 rounded-full bg-red-50 text-red-500 mx-auto flex items-center justify-center mb-4">
+          <AlertCircle className="w-6 h-6" />
+        </div>
+        <h2 className="text-xl font-bold text-slate-900 mb-2">Admin Not Found</h2>
+        <p className="text-sm text-slate-500 mb-6">
+          Administrator record #{id} does not exist or has been removed.
+        </p>
+        <Button variant="primary" onClick={() => navigate("/admins")}>
+          Return to Administrators
+        </Button>
+      </div>
+    );
+  }
 
   return (
-    <div>
-      <button
-        onClick={() => navigate("/admins")}
-        className="text-blue-600 hover:underline mb-6 flex items-center gap-2"
-      >
-        ← Back
-      </button>
+    <div className="max-w-3xl mx-auto space-y-6 pb-12">
+      <div>
+        <Link
+          to="/admins"
+          className="inline-flex items-center gap-2 text-sm font-medium text-slate-500 hover:text-indigo-600 transition"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          Back to Administrators
+        </Link>
+      </div>
 
-      <div className="bg-white rounded-2xl shadow p-8">
-        <div className="flex items-center gap-5 mb-8">
-          <div className="w-20 h-20 rounded-full bg-blue-600 text-white flex items-center justify-center text-3xl font-bold">
-            {admin.fullName?.charAt(0).toUpperCase()}
-          </div>
-
-          <div>
-            <h1 className="text-3xl font-bold">{admin.fullName}</h1>
-            <p className="text-gray-500">Administrator Profile</p>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-          <div>
-            <h2 className="text-xl font-semibold mb-4">Personal Information</h2>
-
-            <div className="space-y-4">
-              <div className="flex items-center gap-3">
-                <Mail className="w-5 h-5 text-gray-500" />
-                <span>{admin.email}</span>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <User className="w-5 h-5 text-gray-500" />
-                <span>{admin.fullName}</span>
-              </div>
+      {/* Header Banner */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 sm:p-8">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+          <div className="flex items-center gap-5">
+            <div className="w-16 h-16 rounded-2xl bg-purple-50 border border-purple-100 text-purple-600 font-bold flex items-center justify-center text-2xl shadow-sm shrink-0">
+              {admin.fullName ? admin.fullName.charAt(0).toUpperCase() : "A"}
             </div>
-          </div>
-
-          <div>
-            <h2 className="text-xl font-semibold mb-4">Account Information</h2>
-
-            <div className="space-y-5">
-              <div>
-                <p className="font-semibold flex items-center gap-2 mb-1">
-                  <Shield className="w-5 h-5 text-gray-500" />
-                  Role
-                </p>
-                <p className="text-gray-700 ml-7">{admin.role}</p>
+            <div>
+              <div className="flex flex-wrap items-center gap-3">
+                <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
+                  {admin.fullName || "Administrator"}
+                </h1>
+                <Badge role={admin.role || "ADMIN"} />
+                <Badge status={admin.active ? "ACTIVE" : "INACTIVE"} />
               </div>
-
-              <div>
-                <p className="font-semibold flex items-center gap-2 mb-1">
-                  <CheckCircle className="w-5 h-5 text-gray-500" />
-                  Status
-                </p>
-                <span className="inline-block ml-7 bg-green-100 text-green-700 px-3 py-1 rounded-full text-sm font-medium">
-                  {admin.active ? "ACTIVE" : "INACTIVE"}
+              <div className="flex flex-wrap items-center gap-4 mt-2 text-xs sm:text-sm text-slate-500">
+                <span className="font-mono">ADMIN-#{admin.id}</span>
+                <span>&bull;</span>
+                <span className="flex items-center gap-1">
+                  <Mail className="w-3.5 h-3.5 text-slate-400" />
+                  {admin.email}
                 </span>
               </div>
             </div>
           </div>
+
+          {isSuperAdmin && (
+            <div className="flex flex-wrap items-center gap-3">
+              <Button
+                variant="outline"
+                icon={Pencil}
+                onClick={() => navigate(`/admins/edit/${admin.id}`)}
+              >
+                Edit
+              </Button>
+              <Button
+                variant="danger"
+                icon={Trash2}
+                onClick={() => setShowDeleteConfirm(true)}
+              >
+                Delete
+              </Button>
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Details Card */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Administrative Credentials</CardTitle>
+          <CardDescription>Account permissions and parameters.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs sm:text-sm">
+            <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
+              <span className="text-slate-400 font-semibold uppercase block text-xs">Full Name</span>
+              <span className="font-medium text-slate-900 mt-1 block">{admin.fullName || "-"}</span>
+            </div>
+
+            <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
+              <span className="text-slate-400 font-semibold uppercase block text-xs">Email Address</span>
+              <span className="font-medium text-slate-900 mt-1 block">{admin.email || "-"}</span>
+            </div>
+
+            <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
+              <span className="text-slate-400 font-semibold uppercase block text-xs">System Role</span>
+              <div className="mt-1">
+                <Badge role={admin.role || "ADMIN"} />
+              </div>
+            </div>
+
+            <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
+              <span className="text-slate-400 font-semibold uppercase block text-xs">Account Status</span>
+              <div className="mt-1">
+                <Badge status={admin.active ? "ACTIVE" : "INACTIVE"} />
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Delete Confirmation */}
+      <ConfirmDialog
+        isOpen={showDeleteConfirm}
+        onClose={() => setShowDeleteConfirm(false)}
+        onConfirm={handleDeleteAdmin}
+        title="Delete Administrator"
+        message="Are you sure you want to delete this administrator account? All administrative privileges will be revoked immediately."
+        confirmLabel="Delete Admin"
+        variant="danger"
+        loading={deleting}
+      />
     </div>
   );
 }

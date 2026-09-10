@@ -9,7 +9,7 @@ public interface ChatService {
 
     void sendMessage(ChatMessage message);
 
-    List<ChatMessageEntity> getConversation(String user1, String user2);
+    java.util.List<ChatMessageEntity> getConversation(String user1, String user2);
 
     void markMessagesAsSeen(String sender, String receiver);
 

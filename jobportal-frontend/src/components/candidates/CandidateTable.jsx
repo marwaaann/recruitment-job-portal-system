@@ -101,21 +101,21 @@ export default function CandidateTable({
                 <>
 
                     <Eye
-                        size={16}
-                        className="table-action candidate-table-action table-action-view"
+                        size={18}
+                        className="cursor-pointer text-blue-600 hover:text-blue-800"
                         onClick={() => navigate(`/candidates/${candidate.id}`)}
                     />
 
                     <Link to={`/candidates/edit/${candidate.id}`}>
                         <Pencil
                             size={16}
-                            className="table-action candidate-table-action table-action-edit"
+                            className="text-orange-500 hover:text-orange-700 cursor-pointer"
                         />
                     </Link>
 
                     <Trash2
-                        size={16}
-                        className="table-action candidate-table-action table-action-delete"
+                        size={18}
+                        className="text-red-600 cursor-pointer hover:text-red-800"
                         onClick={() => onDelete(candidate.id)}
                     />
 

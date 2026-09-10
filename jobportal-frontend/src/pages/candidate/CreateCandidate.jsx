@@ -1,398 +1,397 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { ArrowLeft } from "lucide-react";
-import { createCandidate } from "../../services/candidateService";
+import { useState, useEffect } from "react";
+import { useNavigate, Link } from "react-router-dom";
+import {
+  Users,
+  ArrowLeft,
+  User,
+  Mail,
+  Phone,
+  CreditCard,
+  Globe,
+  Calendar,
+  Briefcase,
+  GraduationCap,
+  Clock,
+  AlertTriangle,
+  CheckCircle2,
+  Building2,
+} from "lucide-react";
+import useAuth from "../../hooks/useAuth";
+import {
+  createCandidate,
+  checkDuplicate,
+} from "../../services/candidateService";
+import { getAllPartners } from "../../services/partnerService";
+import Button from "../../components/common/Button";
+import Input from "../../components/common/Input";
+import Select from "../../components/common/Select";
+import Card, {
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+  CardFooter,
+} from "../../components/common/Card";
+import { useToast } from "../../components/common/Toast";
 
 export default function CreateCandidate() {
+  const navigate = useNavigate();
+  const { user, isAdmin, isPartner } = useAuth();
+  const { success, error: toastError, warning } = useToast();
 
-    const navigate = useNavigate();
+  const [partners, setPartners] = useState([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [checkingDuplicate, setCheckingDuplicate] = useState(false);
+  const [duplicateWarning, setDuplicateWarning] = useState(null);
 
-    const [loading, setLoading] = useState(false);
+  const [form, setForm] = useState({
+    fullName: "",
+    email: "",
+    phoneNormalized: "",
+    passportNumber: "",
+    dob: "",
+    nationality: "",
+    experience: "",
+    education: "",
+    noticePeriod: "30 Days",
+    partnerId: isPartner && user?.id ? String(user.id) : "",
+  });
 
-    const [formData, setFormData] = useState({
+  const [formErrors, setFormErrors] = useState({});
 
-        fullName: "",
-        email: "",
-        phoneNormalized: "",
-        passportNumber: "",
-        passportHash: "",
-        dob: "",
-        nationality: "",
-        experience: "",
-        education: "",
-        noticePeriod: "30 Days",
+  useEffect(() => {
+    if (isAdmin) {
+      getAllPartners()
+        .then((data) => setPartners(Array.isArray(data) ? data : []))
+        .catch(() => {});
+    }
+  }, [isAdmin]);
 
-        
+  const validate = () => {
+    const errors = {};
+    if (!form.fullName.trim()) errors.fullName = "Full name is required.";
+    if (!form.email.trim()) {
+      errors.email = "Email address is required.";
+    } else if (!/\S+@\S+\.\S+/.test(form.email)) {
+      errors.email = "Please provide a valid email format.";
+    }
+    if (!form.phoneNormalized.trim()) {
+      errors.phoneNormalized = "Contact phone number is required.";
+    }
+    if (!form.passportNumber.trim()) {
+      errors.passportNumber = "Passport / National ID is required.";
+    }
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
 
-        partnerId: ""
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setForm((prev) => ({ ...prev, [name]: value }));
+    if (formErrors[name]) {
+      setFormErrors((prev) => ({ ...prev, [name]: "" }));
+    }
+  };
 
-    });
+  // Live duplicate check on blur of email, phone, or passport
+  const handleCheckDuplicate = async () => {
+    if (!form.email && !form.phoneNormalized && !form.passportNumber) return;
+    try {
+      setCheckingDuplicate(true);
+      const res = await checkDuplicate(
+        form.email.trim() || undefined,
+        form.phoneNormalized.trim() || undefined,
+        form.passportNumber.trim() || undefined
+      );
 
-    const handleChange = (e) => {
-
-        setFormData({
-
-            ...formData,
-            [e.target.name]: e.target.value
-
+      if (res?.duplicate) {
+        setDuplicateWarning({
+          candidateId: res.candidateId,
+          message:
+            res.message ||
+            "A duplicate candidate matching this email, phone, or passport was detected.",
         });
+        warning("Possible duplicate candidate identified.");
+      } else {
+        setDuplicateWarning(null);
+      }
+    } catch (err) {
+      console.warn("Duplicate check error:", err);
+    } finally {
+      setCheckingDuplicate(false);
+    }
+  };
 
-    };
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!validate()) return;
 
-    const handleSubmit = async (e) => {
+    setSubmitting(true);
+    try {
+      const payload = {
+        fullName: form.fullName.trim(),
+        email: form.email.trim(),
+        phoneNormalized: form.phoneNormalized.trim(),
+        passportNumber: form.passportNumber.trim(),
+        dob: form.dob || null,
+        nationality: form.nationality.trim() || null,
+        experience: form.experience.trim() || null,
+        education: form.education.trim() || null,
+        noticePeriod: form.noticePeriod,
+        partnerId: form.partnerId ? Number(form.partnerId) : null,
+      };
 
-        e.preventDefault();
+      const created = await createCandidate(payload);
+      success("Candidate profile registered successfully!");
+      navigate(created?.id ? `/candidates/${created.id}` : "/candidates");
+    } catch (err) {
+      console.error("Create candidate error:", err);
+      toastError(
+        err.response?.data?.message ||
+          "Failed to create candidate. Please check the information provided."
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
-        if (
-            !formData.fullName ||
-            !formData.email ||
-            !formData.phoneNormalized ||
-            !formData.passportNumber
-        ) {
+  return (
+    <div className="max-w-4xl mx-auto space-y-6 pb-12">
+      {/* Back Link */}
+      <div>
+        <Link
+          to="/candidates"
+          className="inline-flex items-center gap-2 text-sm font-medium text-slate-500 hover:text-indigo-600 transition-colors"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          Back to Candidates
+        </Link>
+      </div>
 
-            alert("Please fill all required fields.");
-            return;
+      {/* Header */}
+      <div className="flex items-center gap-3">
+        <div className="w-12 h-12 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shadow-sm">
+          <Users className="w-6 h-6" />
+        </div>
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
+            Register Candidate
+          </h1>
+          <p className="text-sm text-slate-500">
+            Add a new candidate profile to your talent pipeline with verified
+            identities.
+          </p>
+        </div>
+      </div>
 
-        }
+      {/* Duplicate Warning Banner */}
+      {duplicateWarning && (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-900 flex items-start gap-3 shadow-sm">
+          <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+          <div className="text-sm flex-1">
+            <p className="font-semibold text-amber-900">
+              Potential Duplicate Match Found
+            </p>
+            <p className="mt-0.5 text-amber-800">{duplicateWarning.message}</p>
+            {duplicateWarning.candidateId && (
+              <div className="mt-2">
+                <Link
+                  to={`/candidates/${duplicateWarning.candidateId}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-medium underline hover:text-amber-950 text-xs inline-flex items-center gap-1"
+                >
+                  View Existing Candidate (#{duplicateWarning.candidateId})
+                </Link>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
-        try {
+      {/* Main Form */}
+      <form onSubmit={handleSubmit} className="space-y-6">
+        {/* Section 1: Basic & Identity */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Personal & Identity Information</CardTitle>
+            <CardDescription>
+              Basic biographical data and legal identification records.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="md:col-span-2">
+                <Input
+                  label="Full Legal Name *"
+                  name="fullName"
+                  placeholder="e.g. Alex Morgan"
+                  value={form.fullName}
+                  onChange={handleChange}
+                  error={formErrors.fullName}
+                  icon={User}
+                  required
+                />
+              </div>
 
-            setLoading(true);
+              <div>
+                <Input
+                  label="Email Address *"
+                  name="email"
+                  type="email"
+                  placeholder="candidate@example.com"
+                  value={form.email}
+                  onChange={handleChange}
+                  onBlur={handleCheckDuplicate}
+                  error={formErrors.email}
+                  icon={Mail}
+                  required
+                />
+              </div>
 
-            await createCandidate(formData);
+              <div>
+                <Input
+                  label="Phone Number *"
+                  name="phoneNormalized"
+                  placeholder="+1-555-0199"
+                  value={form.phoneNormalized}
+                  onChange={handleChange}
+                  onBlur={handleCheckDuplicate}
+                  error={formErrors.phoneNormalized}
+                  icon={Phone}
+                  required
+                />
+              </div>
 
-            alert("Candidate created successfully!");
+              <div>
+                <Input
+                  label="Passport / National ID Number *"
+                  name="passportNumber"
+                  placeholder="e.g. A12345678"
+                  value={form.passportNumber}
+                  onChange={handleChange}
+                  onBlur={handleCheckDuplicate}
+                  error={formErrors.passportNumber}
+                  icon={CreditCard}
+                  required
+                />
+              </div>
 
-            navigate("/candidates");
+              <div>
+                <Input
+                  label="Date of Birth"
+                  name="dob"
+                  type="date"
+                  value={form.dob}
+                  onChange={handleChange}
+                  icon={Calendar}
+                />
+              </div>
 
-        } catch (error) {
+              <div>
+                <Input
+                  label="Nationality"
+                  name="nationality"
+                  placeholder="e.g. Canadian"
+                  value={form.nationality}
+                  onChange={handleChange}
+                  icon={Globe}
+                />
+              </div>
 
-            console.error(error);
-
-            alert("Unable to create candidate.");
-
-        } finally {
-
-            setLoading(false);
-
-        }
-
-    };
-
-    return (
-
-        <div className="w-full">
-
-            {/* Header */}
-
-            <div className="flex items-center justify-between mb-8">
-
+              {isAdmin && (
                 <div>
-
-                    <button
-                        onClick={() => navigate(-1)}
-                        className="flex items-center gap-2 text-blue-600 mb-3"
-                    >
-                        <ArrowLeft size={18} />
-                        Back
-                    </button>
-
-                    <h1 className="text-4xl font-bold">
-                        Create Candidate
-                    </h1>
-
-                    <p className="text-gray-500 mt-2">
-                        Register a new candidate into the Job Portal.
-                    </p>
-
+                  <Select
+                    label="Associated Partner Agency"
+                    name="partnerId"
+                    value={form.partnerId}
+                    onChange={handleChange}
+                    icon={Building2}
+                  >
+                    <option value="">-- None (Direct Registration) --</option>
+                    {partners.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.agencyName || p.fullName} (ID #{p.id})
+                      </option>
+                    ))}
+                  </Select>
                 </div>
-
+              )}
             </div>
+          </CardContent>
+        </Card>
 
-            <form
-                onSubmit={handleSubmit}
-                className="page-form"
+        {/* Section 2: Qualifications & Experience */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Professional Background & Qualifications</CardTitle>
+            <CardDescription>
+              Work experience, educational credentials, and availability.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Input
+                  label="Years of Experience"
+                  name="experience"
+                  placeholder="e.g. 5"
+                  value={form.experience}
+                  onChange={handleChange}
+                  icon={Briefcase}
+                />
+              </div>
+
+              <div>
+                <Select
+                  label="Notice Period / Availability"
+                  name="noticePeriod"
+                  value={form.noticePeriod}
+                  onChange={handleChange}
+                  icon={Clock}
+                >
+                  <option value="Immediate">Immediate Availability</option>
+                  <option value="15 Days">15 Days</option>
+                  <option value="30 Days">30 Days</option>
+                  <option value="60 Days">60 Days</option>
+                  <option value="90 Days">90 Days</option>
+                </Select>
+              </div>
+
+              <div className="md:col-span-2">
+                <Input
+                  label="Highest Education / Degrees"
+                  name="education"
+                  placeholder="e.g. B.S. in Computer Science - University of Toronto"
+                  value={form.education}
+                  onChange={handleChange}
+                  icon={GraduationCap}
+                />
+              </div>
+            </div>
+          </CardContent>
+
+          <CardFooter className="flex items-center justify-between border-t border-slate-100 bg-slate-50/50 p-6">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => navigate("/candidates")}
+              disabled={submitting}
             >
+              Cancel
+            </Button>
 
-                {/* Personal Information */}
-
-<div className="mb-10">
-
-    <h2 className="text-2xl font-semibold mb-6 border-b pb-3">
-        Personal Information
-    </h2>
-
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-
-        {/* Full Name */}
-
-        <div>
-
-            <label className="block mb-2 font-medium">
-                Full Name *
-            </label>
-
-            <input
-                type="text"
-                name="fullName"
-                value={formData.fullName}
-                onChange={handleChange}
-                placeholder="John Doe"
-                className="w-full border rounded-lg p-3 outline-none focus:ring-2 focus:ring-blue-500"
-                required
-            />
-
-        </div>
-
-        {/* Email */}
-
-        <div>
-
-            <label className="block mb-2 font-medium">
-                Email *
-            </label>
-
-            <input
-                type="email"
-                name="email"
-                value={formData.email}
-                onChange={handleChange}
-                placeholder="john@example.com"
-                className="w-full border rounded-lg p-3 outline-none focus:ring-2 focus:ring-blue-500"
-                required
-            />
-
-        </div>
-
-        {/* Phone */}
-
-        <div>
-
-            <label className="block mb-2 font-medium">
-                Phone *
-            </label>
-
-            <input
-                type="text"
-                name="phoneNormalized"
-                value={formData.phoneNormalized}
-                onChange={handleChange}
-                placeholder="+919876543210"
-                className="w-full border rounded-lg p-3 outline-none focus:ring-2 focus:ring-blue-500"
-                required
-            />
-
-        </div>
-
-        {/* Passport Number */}
-
-        <div>
-
-            <label className="block mb-2 font-medium">
-                Passport Number *
-            </label>
-
-            <input
-                type="text"
-                name="passportNumber"
-                value={formData.passportNumber}
-                onChange={handleChange}
-                placeholder="A12345678"
-                className="w-full border rounded-lg p-3 outline-none focus:ring-2 focus:ring-blue-500"
-                required
-            />
-
-        </div>
-
-        {/* Passport Hash */}
-
-        <div>
-
-            <label className="block mb-2 font-medium">
-                Passport Hash
-            </label>
-
-            <input
-                type="text"
-                name="passportHash"
-                value={formData.passportHash}
-                onChange={handleChange}
-                placeholder="hash123456"
-                className="w-full border rounded-lg p-3 outline-none focus:ring-2 focus:ring-blue-500"
-            />
-
-        </div>
-
-        {/* DOB */}
-
-        <div>
-
-            <label className="block mb-2 font-medium">
-                Date of Birth
-            </label>
-
-            <input
-                type="date"
-                name="dob"
-                value={formData.dob}
-                onChange={handleChange}
-                className="w-full border rounded-lg p-3 outline-none focus:ring-2 focus:ring-blue-500"
-            />
-
-        </div>
-
-        {/* Nationality */}
-
-        <div className="md:col-span-2">
-
-            <label className="block mb-2 font-medium">
-                Nationality
-            </label>
-
-            <input
-                type="text"
-                name="nationality"
-                value={formData.nationality}
-                onChange={handleChange}
-                placeholder="Indian"
-                className="w-full border rounded-lg p-3 outline-none focus:ring-2 focus:ring-blue-500"
-            />
-
-        </div>
-
-    </div>
-
-</div>
-
-{/* Professional Information */}
-
-<div>
-
-    <h2 className="text-2xl font-semibold mb-6 border-b pb-3">
-        Professional Information
-    </h2>
-
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-
-        {/* Experience */}
-
-        <div>
-
-            <label className="block mb-2 font-medium">
-                Experience
-            </label>
-
-            <textarea
-                name="experience"
-                rows="4"
-                value={formData.experience}
-                onChange={handleChange}
-                placeholder="3 years Java Developer..."
-                className="w-full border rounded-lg p-3 outline-none focus:ring-2 focus:ring-blue-500"
-            />
-
-        </div>
-
-        {/* Education */}
-
-        <div>
-
-            <label className="block mb-2 font-medium">
-                Education
-            </label>
-
-            <textarea
-                name="education"
-                rows="4"
-                value={formData.education}
-                onChange={handleChange}
-                placeholder="B.Tech Computer Science"
-                className="w-full border rounded-lg p-3 outline-none focus:ring-2 focus:ring-blue-500"
-            />
-
-        </div>
-
-        {/* Notice Period */}
-
-        <div>
-
-            <label className="block mb-2 font-medium">
-                Notice Period
-            </label>
-
-            <select
-                name="noticePeriod"
-                value={formData.noticePeriod}
-                onChange={handleChange}
-                className="w-full border rounded-lg p-3 outline-none focus:ring-2 focus:ring-blue-500"
+            <Button
+              type="submit"
+              variant="primary"
+              loading={submitting}
+              icon={CheckCircle2}
             >
-
-                <option>Immediate</option>
-                <option>15 Days</option>
-                <option>30 Days</option>
-                <option>45 Days</option>
-                <option>60 Days</option>
-                <option>90 Days</option>
-
-            </select>
-
-        </div>
-
-
-        <div>
-
-    <label className="block mb-2 font-medium">
-        Partner ID
-    </label>
-
-    <input
-        type="number"
-        name="partnerId"
-        value={formData.partnerId}
-        onChange={handleChange}
-        className="w-full border rounded-lg p-3"
-    />
-
-</div>
-
-
-
-
-
-
-
-
+              {submitting ? "Registering..." : "Register Candidate"}
+            </Button>
+          </CardFooter>
+        </Card>
+      </form>
     </div>
-
-</div>
-
-{/* Buttons */}
-
-<div className="flex justify-end gap-4 mt-10 border-t pt-6">
-
-    <button
-        type="button"
-        onClick={() => navigate("/candidates")}
-        className="px-6 py-3 rounded-lg border border-gray-300 hover:bg-gray-100"
-    >
-        Cancel
-    </button>
-
-    <button
-        type="submit"
-        disabled={loading}
-        className="px-6 py-3 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:bg-gray-400"
-    >
-
-        {loading ? "Creating..." : "Create Candidate"}
-
-    </button>
-
-</div>
-
-</form>
-
-</div>
-
-);
+  );
 }

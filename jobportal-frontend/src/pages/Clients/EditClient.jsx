@@ -1,110 +1,266 @@
-import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { useParams, useNavigate, Link } from "react-router-dom";
+import {
+  Building2,
+  ArrowLeft,
+  User,
+  Mail,
+  Phone,
+  MapPin,
+  CheckCircle2,
+  AlertCircle,
+} from "lucide-react";
 import { getClientById, updateClient } from "../../services/clientService";
+import Button from "../../components/common/Button";
+import Input from "../../components/common/Input";
+import Badge from "../../components/common/Badge";
+import Card, {
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+  CardFooter,
+} from "../../components/common/Card";
+import { CardSkeleton } from "../../components/common/SkeletonLoader";
+import { useToast } from "../../components/common/Toast";
 
 export default function EditClient() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { success, error: toastError } = useToast();
+
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [client, setClient] = useState(null);
 
   const [form, setForm] = useState({
+    company: "",
     fullName: "",
     email: "",
-    password: "",
     phone: "",
-    company: "",
     address: "",
   });
 
+  const [formErrors, setFormErrors] = useState({});
+
   useEffect(() => {
-    loadClient();
-  }, []);
+    const fetchClient = async () => {
+      setLoading(true);
+      try {
+        const data = await getClientById(id);
+        setClient(data);
+        setForm({
+          company: data?.company || "",
+          fullName: data?.fullName || "",
+          email: data?.email || "",
+          phone: data?.phone || "",
+          address: data?.address || "",
+        });
+      } catch (err) {
+        console.error("Failed to load client:", err);
+        toastError("Unable to retrieve client organization details.");
+      } finally {
+        setLoading(false);
+      }
+    };
 
-  const loadClient = async () => {
-    const data = await getClientById(id);
+    fetchClient();
+  }, [id]);
 
-    setForm({
-      fullName: data.fullName || "",
-      email: data.email || "",
-      password: "",
-      phone: data.phone || "",
-      company: data.company || "",
-      address: data.address || "",
-    });
+  const validate = () => {
+    const errors = {};
+    if (!form.company.trim()) errors.company = "Company name is required.";
+    if (!form.fullName.trim()) errors.fullName = "Representative name is required.";
+    if (!form.email.trim()) {
+      errors.email = "Email address is required.";
+    } else if (!/\S+@\S+\.\S+/.test(form.email)) {
+      errors.email = "Invalid email format.";
+    }
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
   };
 
   const handleChange = (e) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
+    const { name, value } = e.target;
+    setForm((prev) => ({ ...prev, [name]: value }));
+    if (formErrors[name]) {
+      setFormErrors((prev) => ({ ...prev, [name]: "" }));
+    }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!validate()) return;
 
+    setSaving(true);
     try {
-      await updateClient(id, form);
-      alert("Client updated successfully");
-      navigate("/clients");
+      const payload = {
+        company: form.company.trim(),
+        fullName: form.fullName.trim(),
+        email: form.email.trim(),
+        phone: form.phone.trim() || null,
+        address: form.address.trim() || null,
+      };
+
+      await updateClient(id, payload);
+      success("Client organization updated successfully!");
+      navigate(`/clients/${id}`);
     } catch (err) {
-      console.error(err);
-      alert("Unable to update client");
+      console.error("Update client error:", err);
+      toastError(
+        err.response?.data?.message || "Failed to update client details."
+      );
+    } finally {
+      setSaving(false);
     }
   };
 
-  return (
-    <div className="max-w-3xl mx-auto bg-white rounded-2xl shadow p-8">
-      <h1 className="text-4xl font-bold mb-2">Edit Client</h1>
-      <p className="text-gray-500 mb-8">Update client information</p>
+  if (loading) {
+    return (
+      <div className="max-w-3xl mx-auto space-y-6">
+        <div className="h-6 w-36 bg-slate-200 rounded animate-pulse" />
+        <CardSkeleton rows={5} />
+      </div>
+    );
+  }
 
-      <form onSubmit={handleSubmit} className="page-form space-y-6">
-        <div className="grid md:grid-cols-2 gap-5">
-          <input
-            name="fullName"
-            value={form.fullName}
-            onChange={handleChange}
-            className="border rounded-lg px-4 py-3"
-          />
-
-          <input
-            name="email"
-            value={form.email}
-            onChange={handleChange}
-            className="border rounded-lg px-4 py-3"
-          />
-
-          <input
-            type="password"
-            name="password"
-            value={form.password}
-            onChange={handleChange}
-            placeholder="Leave blank to keep same password"
-            className="border rounded-lg px-4 py-3"
-          />
-
-          <input
-            name="phone"
-            value={form.phone}
-            onChange={handleChange}
-            className="border rounded-lg px-4 py-3"
-          />
+  if (!client) {
+    return (
+      <div className="max-w-xl mx-auto py-12 text-center">
+        <div className="w-12 h-12 rounded-full bg-red-50 text-red-500 mx-auto flex items-center justify-center mb-4">
+          <AlertCircle className="w-6 h-6" />
         </div>
+        <h2 className="text-xl font-bold text-slate-900 mb-2">Client Not Found</h2>
+        <p className="text-sm text-slate-500 mb-6">
+          Client record #{id} does not exist or has been removed.
+        </p>
+        <Button variant="primary" onClick={() => navigate("/clients")}>
+          Return to Clients
+        </Button>
+      </div>
+    );
+  }
 
-        <input
-          name="company"
-          value={form.company}
-          onChange={handleChange}
-          className="w-full border rounded-lg px-4 py-3"
-        />
+  return (
+    <div className="max-w-3xl mx-auto space-y-6 pb-12">
+      <div>
+        <Link
+          to={`/clients/${id}`}
+          className="inline-flex items-center gap-2 text-sm font-medium text-slate-500 hover:text-indigo-600 transition"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          Back to Client Profile
+        </Link>
+      </div>
 
-        <textarea
-          name="address"
-          value={form.address}
-          onChange={handleChange}
-          rows={4}
-          className="w-full border rounded-lg px-4 py-3"
-        />
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 shadow-sm">
+            <Building2 className="w-6 h-6" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
+                Edit Client Account
+              </h1>
+              <Badge status={client.active ? "ACTIVE" : "BLOCKED"} />
+            </div>
+            <p className="text-sm text-slate-500">
+              Client #{client.id} &bull; {client.company}
+            </p>
+          </div>
+        </div>
+      </div>
 
-        <button className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700">
-          Update Client
-        </button>
+      <form onSubmit={handleSubmit}>
+        <Card>
+          <CardHeader>
+            <CardTitle>Organization & Contact Details</CardTitle>
+            <CardDescription>
+              Update authorized employer profile and corporate office address.
+            </CardDescription>
+          </CardHeader>
+
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Input
+                  label="Company / Organization Name *"
+                  name="company"
+                  value={form.company}
+                  onChange={handleChange}
+                  error={formErrors.company}
+                  icon={Building2}
+                  required
+                />
+              </div>
+
+              <div>
+                <Input
+                  label="Contact Person Name *"
+                  name="fullName"
+                  value={form.fullName}
+                  onChange={handleChange}
+                  error={formErrors.fullName}
+                  icon={User}
+                  required
+                />
+              </div>
+
+              <div>
+                <Input
+                  label="Official Email Address *"
+                  name="email"
+                  type="email"
+                  value={form.email}
+                  onChange={handleChange}
+                  error={formErrors.email}
+                  icon={Mail}
+                  required
+                />
+              </div>
+
+              <div>
+                <Input
+                  label="Phone Number"
+                  name="phone"
+                  value={form.phone}
+                  onChange={handleChange}
+                  icon={Phone}
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <Input
+                  label="Office / Billing Address"
+                  name="address"
+                  value={form.address}
+                  onChange={handleChange}
+                  icon={MapPin}
+                />
+              </div>
+            </div>
+          </CardContent>
+
+          <CardFooter className="flex items-center justify-between border-t border-slate-100 bg-slate-50/50 p-6">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => navigate(`/clients/${id}`)}
+              disabled={saving}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              loading={saving}
+              icon={CheckCircle2}
+            >
+              {saving ? "Saving Changes..." : "Save Changes"}
+            </Button>
+          </CardFooter>
+        </Card>
       </form>
     </div>
   );

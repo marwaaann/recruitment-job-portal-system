@@ -1,287 +1,263 @@
-import { ArrowLeft, CheckCheck, Search, Send, X } from "lucide-react";
-import { Fragment, useEffect, useState, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import {
+  ArrowLeft,
+  Check,
+  CheckCheck,
+  Search,
+  Send,
+  X,
+  User,
+  MessageCircle,
+  Clock,
+  Shield,
+  Circle,
+  Wifi,
+  WifiOff,
+} from "lucide-react";
 import api from "../../services/api";
-
+import useAuth from "../../hooks/useAuth";
 import {
   connect,
   disconnect,
   sendMessage as sendSocketMessage,
 } from "../../services/ChatService";
+function formatContactTime(dateVal) {
+  if (!dateVal) return "";
+  const d = new Date(dateVal);
+  if (isNaN(d.getTime())) return "";
+  const now = new Date();
+  if (d.toDateString() === now.toDateString()) {
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }
+  const isThisYear = d.getFullYear() === now.getFullYear();
+  if (isThisYear) {
+    return d.toLocaleDateString([], { month: "short", day: "numeric" });
+  }
+  return d.toLocaleDateString([], { year: "numeric", month: "short", day: "numeric" });
+}
 
 export default function ChatPanel({ onClose, embedded = false }) {
-  const [currentUser, setCurrentUser] = useState(null);
+  const { user: authUser } = useAuth();
+  const currentUserEmail = authUser?.email?.toLowerCase() || "";
+
   const [users, setUsers] = useState([]);
+  const [onlineMap, setOnlineMap] = useState({});
   const [selectedUser, setSelectedUser] = useState(null);
-  const [message, setMessage] = useState("");
-  const [unreadCounts, setUnreadCounts] = useState({});
+  const [messageText, setMessageText] = useState("");
+  const [messages, setMessages] = useState({});
   const [lastMessages, setLastMessages] = useState({});
+  const [unreadCounts, setUnreadCounts] = useState({});
   const [searchTerm, setSearchTerm] = useState("");
   const [socketConnected, setSocketConnected] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [messages, setMessages] = useState({});
-  const [conversationLoading, setConversationLoading] = useState(false);
-  const [conversationError, setConversationError] = useState("");
+  const [loadingUsers, setLoadingUsers] = useState(true);
+  const [loadingConv, setLoadingConv] = useState(false);
   const [mobileConversationOpen, setMobileConversationOpen] = useState(false);
 
   const messagesEndRef = useRef(null);
-  const messagesContainerRef = useRef(null);
-  const messageKeysRef = useRef(new Set());
-  const previousSelectedEmailRef = useRef(null);
   const selectedUserRef = useRef(null);
-  const usersRef = useRef([]);
-  const currentUserRef = useRef(null);
+  const currentUserRef = useRef(currentUserEmail);
 
   useEffect(() => {
     selectedUserRef.current = selectedUser;
   }, [selectedUser]);
 
   useEffect(() => {
-    usersRef.current = users;
-  }, [users]);
+    currentUserRef.current = currentUserEmail;
+  }, [currentUserEmail]);
 
-  useEffect(() => {
-    currentUserRef.current = currentUser;
-  }, [currentUser]);
-
-  const getMessageKey = (msg) => {
-    if (msg.id !== undefined && msg.id !== null) {
-      return `id-${msg.id}`;
+  // Scroll to bottom helper
+  const scrollToBottom = (behavior = "smooth") => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior });
     }
-
-    return `${msg.sender}-${msg.receiver}-${msg.message}-${
-      msg.sentAt || msg.timestamp || ""
-    }`;
   };
 
-  const getMessageTimestamp = (msg) => {
-    const value = msg?.sentAt || msg?.timestamp;
-    if (!value) return 0;
-
-    const parsed = new Date(value).getTime();
-    return Number.isNaN(parsed) ? 0 : parsed;
-  };
-
-  const getMessageDateKey = (msg) => {
-    const timestamp = getMessageTimestamp(msg);
-    return timestamp ? new Date(timestamp).toDateString() : "unknown";
-  };
-
-  const formatMessageDate = (msg) => {
-    const timestamp = getMessageTimestamp(msg);
-    if (!timestamp) return "";
-
-    const date = new Date(timestamp);
-    const today = new Date();
-    const yesterday = new Date();
-    yesterday.setDate(today.getDate() - 1);
-
-    if (date.toDateString() === today.toDateString()) return "Today";
-    if (date.toDateString() === yesterday.toDateString()) return "Yesterday";
-    return date.toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" });
-  };
-
-  const formatMessageTime = (msg) => {
-    const value = msg?.sentAt || msg?.timestamp;
-    if (!value) return "";
-
-    return new Date(value).toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
-
-  const markConversationSeenViaApi = useCallback(async (senderEmail, receiverEmail) => {
-    if (!senderEmail || !receiverEmail) return;
-
-    try {
-      await api.put("/chat/conversation/seen", null, {
-        params: {
-          sender: senderEmail,
-          receiver: receiverEmail,
-        },
-      });
-    } catch (error) {
-      console.error(
-        "Failed to mark messages as seen:",
-        error.response?.data || error.message
-      );
-    }
-  }, []);
-
+  // 1. Fetch chat users, initial presence, and conversation snapshots
   useEffect(() => {
-    const loadUsersAndProfile = async () => {
+    const fetchInitialData = async () => {
+      setLoadingUsers(true);
       try {
-        setLoading(true);
-
-        const [profileResponse, usersResponse] = await Promise.all([
-          api.get("/users/profile"),
-          api.get("/chat/users"),
+        const [usersRes, presenceRes] = await Promise.all([
+          api.get("/chat/users").catch(() => ({ data: [] })),
+          api.get("/chat/presence").catch(() => ({ data: {} })),
         ]);
 
-        const profile = profileResponse.data;
-        const loggedInEmail = profile.email;
+        const chatUsers = Array.isArray(usersRes.data)
+          ? usersRes.data.filter(
+              (u) => u.email && u.email.toLowerCase() !== currentUserEmail
+            )
+          : [];
 
-        setCurrentUser(loggedInEmail);
+        // Normalize presence keys to lowercase
+        const presence = {};
+        if (presenceRes.data && typeof presenceRes.data === "object") {
+          Object.entries(presenceRes.data).forEach(([email, isOnline]) => {
+            presence[email.toLowerCase()] = isOnline;
+          });
+        }
+        setOnlineMap(presence);
 
-        const backendUsers = usersResponse.data || [];
-
-        const chatUsers = backendUsers
-          .filter(
-            (user) =>
-              user.email &&
-              user.email !== loggedInEmail &&
-              user.active !== false
-          )
-          .map((user) => ({
-            id: user.id,
-            name: user.fullName,
-            email: user.email,
-            role: user.role,
-          }));
-
-        setUsers(chatUsers);
-
+        // Fetch recent conversation history for each contact in parallel
+        const initialLastMsgs = {};
+        const initialUnreads = {};
         const initialMessages = {};
-        chatUsers.forEach((user) => {
-          initialMessages[user.id] = [];
+
+        const results = await Promise.allSettled(
+          chatUsers.map(async (u) => {
+            const uEmail = (u.email || "").toLowerCase();
+            try {
+              const res = await api.get("/chat/conversation", {
+                params: { user1: currentUserEmail, user2: uEmail },
+              });
+              const hist = Array.isArray(res.data) ? res.data : [];
+              return { uEmail, hist };
+            } catch {
+              return { uEmail, hist: [] };
+            }
+          })
+        );
+
+        results.forEach((r) => {
+          if (r.status === "fulfilled" && r.value) {
+            const { uEmail, hist } = r.value;
+            if (hist.length > 0) {
+              initialMessages[uEmail] = hist;
+              initialLastMsgs[uEmail] = hist[hist.length - 1];
+              const unread = hist.filter(
+                (m) => (m.receiver || "").toLowerCase() === currentUserEmail && !m.seen
+              ).length;
+              if (unread > 0) {
+                initialUnreads[uEmail] = unread;
+              }
+            }
+          }
         });
 
-        setMessages(initialMessages);
+        setLastMessages(initialLastMsgs);
+        setUnreadCounts(initialUnreads);
+        setMessages((prev) => ({ ...initialMessages, ...prev }));
 
-        if (chatUsers.length > 0) {
-          setSelectedUser(chatUsers[0]);
+        // Sort users initially: newest message at top, then unread, then online
+        const sorted = [...chatUsers].sort((a, b) => {
+          const aEmail = (a.email || "").toLowerCase();
+          const bEmail = (b.email || "").toLowerCase();
+
+          const aLast = initialLastMsgs[aEmail];
+          const bLast = initialLastMsgs[bEmail];
+
+          const aTime = aLast ? new Date(aLast.sentAt || aLast.timestamp || 0).getTime() : 0;
+          const bTime = bLast ? new Date(bLast.sentAt || bLast.timestamp || 0).getTime() : 0;
+
+          if (aTime !== bTime) return bTime - aTime;
+          if (aTime > 0 && bTime === 0) return -1;
+          if (bTime > 0 && aTime === 0) return 1;
+
+          const aUnread = initialUnreads[aEmail] || 0;
+          const bUnread = initialUnreads[bEmail] || 0;
+          if (aUnread !== bUnread) return bUnread - aUnread;
+
+          const aOnline = !!presence[aEmail];
+          const bOnline = !!presence[bEmail];
+          if (aOnline !== bOnline) return bOnline ? 1 : -1;
+
+          return (a.fullName || a.email || "").localeCompare(b.fullName || b.email || "");
+        });
+
+        setUsers(sorted);
+
+        // Auto-select first user if embedded view and no user selected yet
+        if (embedded && sorted.length > 0 && !selectedUserRef.current) {
+          setSelectedUser(sorted[0]);
         }
-      } catch (error) {
-        console.error(
-          "Failed to load users/profile:",
-          error.response?.status,
-          error.response?.data || error.message
-        );
+      } catch (err) {
+        console.error("Failed to load chat users/presence:", err);
       } finally {
-        setLoading(false);
+        setLoadingUsers(false);
       }
     };
 
-    loadUsersAndProfile();
+    if (currentUserEmail) {
+      fetchInitialData();
+    }
+  }, [currentUserEmail, embedded]);
+
+  // 2. Mark conversation as seen via API
+  const markAsSeenApi = useCallback(async (senderEmail, receiverEmail) => {
+    if (!senderEmail || !receiverEmail) return;
+    try {
+      await api.put("/chat/conversation/seen", null, {
+        params: { sender: senderEmail, receiver: receiverEmail },
+      });
+    } catch (err) {
+      console.warn("Failed to mark conversation as seen:", err);
+    }
   }, []);
 
+  // 3. Connect STOMP WebSocket
   useEffect(() => {
-    if (!currentUser) {
-      return;
-    }
+    if (!currentUserEmail) return;
 
     connect(
-      currentUser,
+      currentUserEmail,
+      // onMessageReceived:
       (incoming) => {
-        const activeCurrentUser = currentUserRef.current;
-        if (!activeCurrentUser) return;
+        if (!incoming) return;
 
-        const otherUserEmail =
-          incoming.sender === activeCurrentUser
-            ? incoming.receiver
-            : incoming.sender;
+        const sender = (incoming.sender || "").toLowerCase();
+        const receiver = (incoming.receiver || "").toLowerCase();
+        const activeUser = currentUserRef.current;
+        const otherParty = sender === activeUser ? receiver : sender;
 
-        let user = usersRef.current.find((u) => u.email === otherUserEmail);
-
-        if (!user) {
-          user = {
-            id: `dynamic-${otherUserEmail}`,
-            name: otherUserEmail?.split("@")[0] || otherUserEmail,
-            email: otherUserEmail,
-            role: "User",
-          };
-
-          setUsers((prev) => {
-            const exists = prev.some((u) => u.email === user.email);
-            if (exists) return prev;
-            return [...prev, user];
-          });
-        }
-
-        const incomingKey = getMessageKey(incoming);
-        const isDuplicate = messageKeysRef.current.has(incomingKey);
-        messageKeysRef.current.add(incomingKey);
-
+        // Add to messages map deduplicated by ID
         setMessages((prev) => {
-          const existing = prev[user.id] || [];
-          const existingIndex = existing.findIndex(
-            (msg) => getMessageKey(msg) === incomingKey
-          );
-
-          if (existingIndex >= 0) {
-            const updated = [...existing];
-            updated[existingIndex] = {
-              ...updated[existingIndex],
-              ...incoming,
-            };
-
-            return { ...prev, [user.id]: updated };
+          const list = prev[otherParty] || [];
+          // If already has this message ID, update it; otherwise append
+          if (incoming.id !== undefined && incoming.id !== null) {
+            const idx = list.findIndex((m) => m.id === incoming.id);
+            if (idx >= 0) {
+              const copy = [...list];
+              copy[idx] = { ...copy[idx], ...incoming };
+              return { ...prev, [otherParty]: copy };
+            }
           }
-
-          return {
-            ...prev,
-            [user.id]: [...existing, incoming],
-          };
+          return { ...prev, [otherParty]: [...list, incoming] };
         });
 
-        setLastMessages((prev) => ({
-          ...prev,
-          [otherUserEmail]: incoming,
-        }));
+        // Update last message
+        setLastMessages((prev) => ({ ...prev, [otherParty]: incoming }));
 
-        const currentlySelectedEmail = selectedUserRef.current?.email;
-
-        if (!isDuplicate && currentlySelectedEmail !== otherUserEmail) {
+        // If currently viewing this conversation, mark as seen immediately
+        const currentlyOpen = selectedUserRef.current?.email?.toLowerCase();
+        if (currentlyOpen === otherParty) {
+          setUnreadCounts((prev) => ({ ...prev, [otherParty]: 0 }));
+          markAsSeenApi(otherParty, activeUser);
+        } else if (sender !== activeUser) {
+          // Increment unread count
           setUnreadCounts((prev) => ({
             ...prev,
-            [otherUserEmail]: (prev[otherUserEmail] || 0) + 1,
+            [otherParty]: (prev[otherParty] || 0) + 1,
           }));
-        } else if (currentlySelectedEmail === otherUserEmail) {
-          setUnreadCounts((prev) => ({
-            ...prev,
-            [otherUserEmail]: 0,
-          }));
-
-          setMessages((prev) => ({
-            ...prev,
-            [user.id]: (prev[user.id] || []).map((msg) =>
-              msg.sender === otherUserEmail && msg.receiver === activeCurrentUser
-                ? { ...msg, seen: true }
-                : msg
-            ),
-          }));
-
-          markConversationSeenViaApi(otherUserEmail, activeCurrentUser);
         }
 
-        if (
-          incoming.receiver === activeCurrentUser &&
-          incoming.sender !== activeCurrentUser &&
-          typeof window !== "undefined" &&
-          typeof Notification !== "undefined" &&
-          document.visibilityState !== "visible" &&
-          Notification.permission === "granted"
-        ) {
-          new Notification(`New message from ${user.name}`, {
-            body: incoming.message,
-          });
-        }
-
-        if (
-          incoming.receiver === activeCurrentUser &&
-          incoming.sender !== activeCurrentUser
-        ) {
-          api
-            .put("/chat/conversation/delivered", null, {
-              params: { sender: incoming.sender, receiver: activeCurrentUser },
-            })
-            .catch((error) =>
-              console.error("Failed to mark message delivered:", error)
-            );
+        // Auto-scroll if chatting with this user
+        if (currentlyOpen === otherParty) {
+          setTimeout(() => scrollToBottom("smooth"), 100);
         }
       },
+      // onConnectionChange:
       (connected) => {
         setSocketConnected(connected);
+      },
+      // onPresenceReceived:
+      (presencePayload) => {
+        if (!presencePayload || typeof presencePayload !== "object") return;
+        setOnlineMap((prev) => {
+          const updated = { ...prev };
+          Object.entries(presencePayload).forEach(([email, isOnline]) => {
+            updated[email.toLowerCase()] = isOnline;
+          });
+          return updated;
+        });
       }
     );
 
@@ -289,317 +265,526 @@ export default function ChatPanel({ onClose, embedded = false }) {
       disconnect();
       setSocketConnected(false);
     };
-  }, [currentUser, markConversationSeenViaApi]);
+  }, [currentUserEmail, markAsSeenApi]);
 
-  const markConversationAsSeen = useCallback(
-    async (user) => {
-      if (!currentUser || !user) return;
-
-      await markConversationSeenViaApi(user.email, currentUser);
-
-      setMessages((prev) => ({
-        ...prev,
-        [user.id]: (prev[user.id] || []).map((msg) =>
-          msg.sender === user.email && msg.receiver === currentUser
-            ? { ...msg, seen: true }
-            : msg
-        ),
-      }));
-
-      setUnreadCounts((prev) => ({ ...prev, [user.email]: 0 }));
-    },
-    [currentUser, markConversationSeenViaApi]
-  );
-
+  // 4. Load conversation history when selectedUser changes
   useEffect(() => {
-    if (!currentUser || !selectedUser) {
-      return;
-    }
+    if (!selectedUser?.email || !currentUserEmail) return;
 
-    const loadConversation = async () => {
+    const otherEmail = selectedUser.email.toLowerCase();
+
+    const fetchHistory = async () => {
+      setLoadingConv(true);
       try {
-        setConversationLoading(true);
-        setConversationError("");
-        const response = await api.get("/chat/conversation", {
-          params: {
-            user1: currentUser,
-            user2: selectedUser.email,
-          },
+        const res = await api.get("/chat/conversation", {
+          params: { user1: currentUserEmail, user2: otherEmail },
         });
 
-        const databaseMessages = response.data || [];
+        const history = Array.isArray(res.data) ? res.data : [];
+        setMessages((prev) => ({
+          ...prev,
+          [otherEmail]: history,
+        }));
 
-        setMessages((prev) => {
-          const existingMessages = prev[selectedUser.id] || [];
-          const merged = [...existingMessages, ...databaseMessages];
-
-          const uniqueMessages = [];
-          const seen = new Set();
-
-          merged.forEach((msg) => {
-            const key = getMessageKey(msg);
-
-            if (!seen.has(key)) {
-              seen.add(key);
-              messageKeysRef.current.add(key);
-              uniqueMessages.push(msg);
-            }
-          });
-
-          uniqueMessages.sort((a, b) => getMessageTimestamp(a) - getMessageTimestamp(b));
-
-          return {
-            ...prev,
-            [selectedUser.id]: uniqueMessages,
-          };
-        });
-
-        const newestMessage = databaseMessages[databaseMessages.length - 1];
-        if (newestMessage) {
+        if (history.length > 0) {
           setLastMessages((prev) => ({
             ...prev,
-            [selectedUser.email]: newestMessage,
+            [otherEmail]: history[history.length - 1],
           }));
         }
 
-        setUnreadCounts((prev) => ({
-          ...prev,
-          [selectedUser.email]: 0,
-        }));
+        // Mark as seen
+        markAsSeenApi(otherEmail, currentUserEmail);
+        setUnreadCounts((prev) => ({ ...prev, [otherEmail]: 0 }));
 
-        await markConversationAsSeen(selectedUser);
-      } catch (error) {
-        console.error("Failed to load conversation:", error);
-        setConversationError(
-          error.response?.status === 403
-            ? "You do not have permission to view this conversation."
-            : "Could not load this conversation."
-        );
+        setTimeout(() => scrollToBottom("auto"), 150);
+      } catch (err) {
+        console.error("Failed to load conversation history:", err);
       } finally {
-        setConversationLoading(false);
+        setLoadingConv(false);
       }
     };
 
-    loadConversation();
-  }, [currentUser, selectedUser, markConversationAsSeen]);
+    fetchHistory();
+  }, [selectedUser, currentUserEmail, markAsSeenApi]);
 
-  useEffect(() => {
-    const container = messagesContainerRef.current;
-    if (!container) return;
+  // 5. Send message action
+  const handleSend = async (e) => {
+    if (e) e.preventDefault();
+    const text = messageText.trim();
+    if (!text || !selectedUser?.email || !currentUserEmail) return;
 
-    const changedConversation =
-      previousSelectedEmailRef.current !== selectedUser?.email;
-    previousSelectedEmailRef.current = selectedUser?.email;
-
-    const nearBottom =
-      container.scrollHeight - container.scrollTop - container.clientHeight < 120;
-
-    if (changedConversation || nearBottom) {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }
-  }, [messages, selectedUser]);
-
-  useEffect(() => {
-    if (typeof window === "undefined" || typeof Notification === "undefined") {
-      return;
-    }
-
-    if (Notification.permission === "default") {
-      Notification.requestPermission().catch(() => {
-        // Ignore permission prompt errors.
-      });
-    }
-  }, []);
-
-  const handleSend = () => {
-    const trimmedMessage = message.trim();
-
-    if (!trimmedMessage || !currentUser || !selectedUser || !socketConnected) {
-      return;
-    }
+    const receiverEmail = selectedUser.email.toLowerCase();
+    const nowIso = new Date().toISOString();
 
     const payload = {
-      sender: currentUser,
-      receiver: selectedUser.email,
-      message: trimmedMessage,
+      sender: currentUserEmail,
+      receiver: receiverEmail,
+      message: text,
+      timestamp: nowIso,
     };
 
-    sendSocketMessage(payload);
+    setMessageText("");
 
-    setUnreadCounts((prev) => ({
+    // Optimistically update last message so active contact stays at top
+    setLastMessages((prev) => ({
       ...prev,
-      [selectedUser.email]: 0,
+      [receiverEmail]: { ...payload, sentAt: nowIso },
     }));
 
-    setMessage("");
+    try {
+      if (socketConnected) {
+        sendSocketMessage(payload);
+      } else {
+        // Fallback to REST endpoint
+        await api.post("/chat/send", payload);
+      }
+    } catch (err) {
+      console.error("Failed to send message:", err);
+    }
   };
 
-  const handleSelectUser = (user) => {
-    setSelectedUser(user);
-    setUnreadCounts((prev) => ({ ...prev, [user.email]: 0 }));
+  const handleSelectContact = (u) => {
+    setSelectedUser(u);
     setMobileConversationOpen(true);
+    if (u?.email) {
+      const email = u.email.toLowerCase();
+      setUnreadCounts((prev) => ({ ...prev, [email]: 0 }));
+      markAsSeenApi(email, currentUserEmail);
+    }
   };
 
-  const getInitials = (user) => (user?.name || user?.email || "?")
-    .split(/[\s@._-]+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part.charAt(0).toUpperCase())
-    .join("");
+  // Filtered & Real-time Sorted contacts (newest message / unread conversation at the top)
+  const filteredUsers = useMemo(() => {
+    let list = [...users];
 
-  const sortedUsers = [...users].sort((a, b) => {
-    const unreadA = unreadCounts[a.email] || 0;
-    const unreadB = unreadCounts[b.email] || 0;
-
-    if (unreadA > 0 && unreadB === 0) {
-      return -1;
+    if (searchTerm.trim()) {
+      const s = searchTerm.toLowerCase();
+      list = list.filter(
+        (u) =>
+          (u.fullName && u.fullName.toLowerCase().includes(s)) ||
+          (u.email && u.email.toLowerCase().includes(s)) ||
+          (u.role && u.role.toLowerCase().includes(s))
+      );
     }
 
-    if (unreadA === 0 && unreadB > 0) {
-      return 1;
-    }
+    return list.sort((a, b) => {
+      const aEmail = (a.email || "").toLowerCase();
+      const bEmail = (b.email || "").toLowerCase();
 
-    if (unreadA !== unreadB) {
-      return unreadB - unreadA;
-    }
+      const aLast = lastMessages[aEmail];
+      const bLast = lastMessages[bEmail];
 
-    const lastA = getMessageTimestamp(lastMessages[a.email]);
-    const lastB = getMessageTimestamp(lastMessages[b.email]);
+      const aTime = aLast ? new Date(aLast.sentAt || aLast.timestamp || 0).getTime() : 0;
+      const bTime = bLast ? new Date(bLast.sentAt || bLast.timestamp || 0).getTime() : 0;
 
-    if (lastA !== lastB) {
-      return lastB - lastA;
-    }
+      // 1. Sort by latest message timestamp (newest on top)
+      if (aTime !== bTime) {
+        return bTime - aTime;
+      }
 
-    return (a.name || a.email).localeCompare(b.name || b.email);
-  });
+      // If one has message history and other doesn't
+      if (aTime > 0 && bTime === 0) return -1;
+      if (bTime > 0 && aTime === 0) return 1;
 
-  const filteredUsers = sortedUsers.filter((user) => {
-    const query = searchTerm.trim().toLowerCase();
-    if (!query) return true;
+      // 2. Unread messages prioritized
+      const aUnread = unreadCounts[aEmail] || 0;
+      const bUnread = unreadCounts[bEmail] || 0;
+      if (aUnread !== bUnread) {
+        return bUnread - aUnread;
+      }
 
-    return [user.name, user.email, user.role]
-      .filter(Boolean)
-      .some((value) => value.toLowerCase().includes(query));
-  });
+      // 3. Online users next
+      const aOnline = !!onlineMap[aEmail];
+      const bOnline = !!onlineMap[bEmail];
+      if (aOnline !== bOnline) {
+        return bOnline ? 1 : -1;
+      }
+
+      // 4. Alphabetical fallback
+      const aName = a.fullName || a.email || "";
+      const bName = b.fullName || b.email || "";
+      return aName.localeCompare(bName);
+    });
+  }, [users, searchTerm, lastMessages, unreadCounts, onlineMap]);
+
+  // Active conversation message list
+  const activeMessages = useMemo(() => {
+    if (!selectedUser?.email) return [];
+    return messages[selectedUser.email.toLowerCase()] || [];
+  }, [messages, selectedUser]);
+
+  // Group messages by day
+  const groupedMessages = useMemo(() => {
+    const groups = [];
+    let currentDay = null;
+    let currentGroup = null;
+
+    activeMessages.forEach((msg) => {
+      const dateVal = msg.sentAt || msg.timestamp;
+      const dayStr = dateVal
+        ? new Date(dateVal).toDateString()
+        : "Recent";
+
+      if (dayStr !== currentDay) {
+        currentDay = dayStr;
+        currentGroup = { day: dayStr, items: [] };
+        groups.push(currentGroup);
+      }
+      currentGroup.items.push(msg);
+    });
+
+    return groups;
+  }, [activeMessages]);
+
+  const selectedIsOnline =
+    selectedUser?.email && !!onlineMap[selectedUser.email.toLowerCase()];
 
   return (
-    <div className={`${embedded ? "h-full w-full" : "fixed bottom-24 right-6 z-50 h-[min(680px,calc(100vh-7rem))] w-[min(1000px,calc(100vw-3rem))]"} chat-shell chat-workspace flex overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl`}>
-      <div className={`${mobileConversationOpen ? "hidden md:flex" : "flex"} chat-sidebar w-full shrink-0 border-r border-slate-200 bg-white md:w-[350px]`}>
-        <div className="flex min-h-0 flex-1 flex-col">
-          <div className="border-b border-slate-200 px-5 py-4">
-            <div className="flex items-center justify-between">
-              <div><p className="chat-kicker">Recruitment operations</p><h2 className="mt-1 text-xl font-semibold text-slate-950">Team desk</h2></div>
+    <div
+      className={
+        embedded
+          ? "h-[calc(100vh-8.5rem)] bg-white rounded-2xl border border-slate-200 shadow-sm flex overflow-hidden"
+          : "fixed bottom-5 right-5 z-50 w-[92vw] sm:w-[420px] md:w-[750px] h-[580px] bg-white rounded-2xl shadow-2xl border border-slate-200/90 flex overflow-hidden transition-all animate-in fade-in zoom-in-95 duration-200"
+      }
+    >
+      {/* LEFT PANE: Contacts List */}
+      <div
+        className={`w-full md:w-72 lg:w-80 border-r border-slate-200 flex flex-col bg-slate-50/50 ${
+          mobileConversationOpen ? "hidden md:flex" : "flex"
+        }`}
+      >
+        {/* Contacts Header */}
+        <div className="p-3.5 border-b border-slate-200 bg-white flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <MessageCircle className="w-5 h-5 text-indigo-600" />
+            <h2 className="font-bold text-slate-900 text-sm">Messages</h2>
+          </div>
+          <div className="flex items-center gap-2">
+            <span
+              className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                socketConnected
+                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                  : "bg-amber-50 text-amber-700 border border-amber-200"
+              }`}
+              title={socketConnected ? "STOMP WebSocket Live" : "Connecting..."}
+            >
+              {socketConnected ? (
+                <>
+                  <Wifi className="w-2.5 h-2.5" />
+                  Live
+                </>
+              ) : (
+                <>
+                  <WifiOff className="w-2.5 h-2.5" />
+                  Offline
+                </>
+              )}
+            </span>
+            {!embedded && onClose && (
+              <button
+                onClick={onClose}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Search Contacts */}
+        <div className="p-3 bg-white border-b border-slate-100">
+          <div className="relative">
+            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search conversations..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-8.5 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            />
+          </div>
+        </div>
+
+        {/* Contacts Scroll List */}
+        <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
+          {loadingUsers ? (
+            <div className="p-4 space-y-3">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="flex items-center gap-2.5 animate-pulse">
+                  <div className="w-10 h-10 rounded-full bg-slate-200" />
+                  <div className="flex-1 space-y-1.5">
+                    <div className="h-3 w-28 bg-slate-200 rounded" />
+                    <div className="h-2.5 w-36 bg-slate-100 rounded" />
+                  </div>
+                </div>
+              ))}
             </div>
-          </div>
+          ) : filteredUsers.length === 0 ? (
+            <div className="p-8 text-center text-xs text-slate-400">
+              No contacts found
+            </div>
+          ) : (
+            filteredUsers.map((u) => {
+              const uEmail = u.email ? u.email.toLowerCase() : "";
+              const isSelected = selectedUser?.email?.toLowerCase() === uEmail;
+              const isOnline = !!onlineMap[uEmail];
+              const unread = unreadCounts[uEmail] || 0;
+              const lastMsg = lastMessages[uEmail];
 
-          <div className="p-4"><label className="chat-search"><Search size={16} /><input placeholder="Find a teammate or role" value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} /></label></div>
+              return (
+                <button
+                  key={u.id || u.email}
+                  type="button"
+                  onClick={() => handleSelectContact(u)}
+                  className={`w-full text-left p-3 flex items-start gap-3 transition-colors ${
+                    isSelected
+                      ? "bg-indigo-50/70 border-r-2 border-indigo-600"
+                      : "hover:bg-slate-100/60"
+                  }`}
+                >
+                  {/* Avatar with Presence indicator */}
+                  <div className="relative shrink-0 mt-0.5">
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-600 text-white font-bold flex items-center justify-center text-xs shadow-sm">
+                      {u.fullName ? u.fullName.charAt(0).toUpperCase() : "U"}
+                    </div>
+                    {/* Real Presence Dot */}
+                    <span
+                      className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full ring-2 ring-white ${
+                        isOnline ? "bg-emerald-500" : "bg-slate-300"
+                      }`}
+                      title={isOnline ? "Online" : "Offline"}
+                    />
+                  </div>
 
-          <div className="chat-contacts-scrollbar min-h-0 flex-1 overflow-y-auto px-3 pb-3">
-            {loading ? <div className="space-y-2 px-1">{[1, 2, 3, 4].map((item) => <div key={item} className="chat-skeleton" />)}</div> : filteredUsers.map((user) => {
-              const unread = unreadCounts[user.email] || 0;
-              const preview = lastMessages[user.email];
-              return <button key={user.id} type="button" onClick={() => handleSelectUser(user)} className={`chat-contact ${selectedUser?.id === user.id ? "chat-contact-active" : ""} ${unread ? "chat-contact-unread" : ""}`}>
-                <span className="chat-avatar">{getInitials(user)}</span>
-                <span className="min-w-0 flex-1 text-left"><strong className="block truncate">{user.name || user.email}</strong><small className="block truncate">{user.role || "User"}{preview ? `  |  ${preview.message}` : "  |  No messages yet"}</small></span>
-                <span className="flex shrink-0 flex-col items-end gap-1">{preview && <time>{formatMessageTime(preview)}</time>}{unread > 0 && <b className="chat-unread-badge">{unread}</b>}</span>
-              </button>;
-            })}
-
-            {!loading && filteredUsers.length === 0 && <div className="chat-empty">{users.length ? "No conversations match your search." : "No conversations available."}</div>}
-          </div>
+                  {/* Name, Role, Last Message */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-1 mb-0.5">
+                      <h4 className={`text-xs truncate ${unread > 0 ? "font-bold text-slate-900" : "font-semibold text-slate-800"}`}>
+                        {u.fullName || u.email}
+                      </h4>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {lastMsg && (
+                          <span className="text-[10px] text-slate-400 font-normal">
+                            {formatContactTime(lastMsg.sentAt || lastMsg.timestamp)}
+                          </span>
+                        )}
+                        {unread > 0 && (
+                          <span className="px-1.5 py-0.2 bg-indigo-600 text-white rounded-full text-[10px] font-bold">
+                            {unread}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between text-[11px] text-slate-400">
+                      <span className="capitalize text-[10px] font-medium text-slate-500">
+                        {u.role ? u.role.toLowerCase() : "User"}
+                      </span>
+                      {isOnline && (
+                        <span className="text-[10px] text-emerald-600 font-semibold">
+                          Online
+                        </span>
+                      )}
+                    </div>
+                    {lastMsg && (
+                      <p className={`text-[11px] truncate mt-0.5 ${unread > 0 ? "font-medium text-slate-900" : "text-slate-500"}`}>
+                        {lastMsg.message}
+                      </p>
+                    )}
+                  </div>
+                </button>
+              );
+            })
+          )}
         </div>
       </div>
 
-      <div className={`${mobileConversationOpen ? "flex" : "hidden md:flex"} min-w-0 flex-1 flex-col bg-slate-50`}>
-        <div className="flex items-center gap-3 border-b border-slate-200 bg-white px-4 py-3">
-          <button type="button" onClick={() => setMobileConversationOpen(false)} className="chat-icon-button md:hidden" title="Back to conversations"><ArrowLeft size={18} /></button>
-          {selectedUser ? <><span className="chat-avatar chat-avatar-header">{getInitials(selectedUser)}</span><div className="min-w-0"><strong className="block truncate text-sm text-slate-950">{selectedUser.name || selectedUser.email}</strong><span className="text-xs text-slate-500">{selectedUser.role || "User"}</span></div></> : <span className="font-semibold text-slate-500">Choose a teammate</span>}
-          <div className="ml-auto flex items-center gap-2"><button type="button" onClick={onClose} className="chat-icon-button" title="Close messages"><X size={18} /></button></div>
-        </div>
-
-        <div
-          ref={messagesContainerRef}
-          className="chat-contacts-scrollbar flex-1 space-y-3 overflow-y-auto bg-[radial-gradient(#dbe5ef_1px,transparent_1px)] bg-[size:18px_18px] p-5"
-        >
-          {conversationLoading && <div className="chat-empty">Loading messages...</div>}
-          {conversationError && <div className="chat-error">{conversationError}</div>}
-          {selectedUser &&
-            !conversationLoading && (messages[selectedUser.id] || []).map((msg, index, activeMessages) => {
-              const previousMessage = activeMessages[index - 1];
-              const showDateSeparator = getMessageDateKey(msg) !== getMessageDateKey(previousMessage);
-
-              return <Fragment key={msg.id ?? `${msg.sender}-${msg.receiver}-${msg.message}-${index}`}>
-                {showDateSeparator && getMessageTimestamp(msg) > 0 && <div className="my-4 flex items-center gap-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400"><span className="h-px flex-1 bg-slate-200" />{formatMessageDate(msg)}<span className="h-px flex-1 bg-slate-200" /></div>}
-                <div
-                className={`flex ${
-                  msg.sender === currentUser ? "justify-end" : "justify-start"
-                }`}
-              >
-                <div
-                  className={`max-w-[min(75%,520px)] rounded-2xl px-3.5 py-2.5 text-sm shadow-sm ${
-                    msg.sender === currentUser
-                      ? "rounded-br-md bg-blue-600 text-white"
-                      : "rounded-bl-md border border-slate-200 bg-white text-slate-800"
-                  }`}
+      {/* RIGHT PANE: Active Conversation */}
+      <div
+        className={`flex-1 flex flex-col bg-white ${
+          !mobileConversationOpen ? "hidden md:flex" : "flex"
+        }`}
+      >
+        {selectedUser ? (
+          <>
+            {/* Conversation Header */}
+            <div className="p-3.5 border-b border-slate-200 bg-white flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setMobileConversationOpen(false)}
+                  className="md:hidden p-1 rounded-lg text-slate-400 hover:text-slate-600"
                 >
-                  <div>{msg.message}</div>
+                  <ArrowLeft className="w-5 h-5" />
+                </button>
 
-                  <div
-                    className={`flex items-center justify-end gap-1 mt-1 text-[10px] ${
-                      msg.sender === currentUser
-                        ? "text-blue-100"
-                        : "text-gray-400"
+                <div className="relative">
+                  <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-600 text-white font-bold flex items-center justify-center text-xs shadow-sm">
+                    {selectedUser.fullName
+                      ? selectedUser.fullName.charAt(0).toUpperCase()
+                      : "U"}
+                  </div>
+                  <span
+                    className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full ring-2 ring-white ${
+                      selectedIsOnline ? "bg-emerald-500" : "bg-slate-300"
                     }`}
-                  >
-                    <span>{formatMessageTime(msg) || ""}</span>
+                  />
+                </div>
 
-                    {msg.sender === currentUser && (
-                      <span className={msg.seen ? "text-cyan-200" : "text-blue-100"}><CheckCheck size={13} /></span>
-                    )}
+                <div>
+                  <h3 className="font-bold text-xs sm:text-sm text-slate-900 leading-tight">
+                    {selectedUser.fullName || selectedUser.email}
+                  </h3>
+                  <div className="flex items-center gap-2 text-[10px] text-slate-500">
+                    <span className="capitalize">
+                      {selectedUser.role
+                        ? selectedUser.role.toLowerCase()
+                        : "User"}
+                    </span>
+                    <span>&bull;</span>
+                    <span
+                      className={
+                        selectedIsOnline
+                          ? "text-emerald-600 font-semibold"
+                          : "text-slate-400"
+                      }
+                    >
+                      {selectedIsOnline ? "Active Now" : "Offline"}
+                    </span>
                   </div>
                 </div>
               </div>
-              </Fragment>;
-            })}
 
-          {selectedUser && !conversationLoading && !conversationError && (messages[selectedUser.id] || []).length === 0 && <div className="chat-empty h-full">No messages yet</div>}
+              {!embedded && onClose && (
+                <button
+                  onClick={onClose}
+                  className="hidden md:inline-flex p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
+                  title="Close"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
 
-          <div ref={messagesEndRef} />
-        </div>
+            {/* Messages Scroll Area */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/40">
+              {loadingConv ? (
+                <div className="flex items-center justify-center h-full text-xs text-slate-400">
+                  Loading conversation history...
+                </div>
+              ) : activeMessages.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full text-center p-6">
+                  <div className="w-12 h-12 rounded-full bg-indigo-50 text-indigo-500 flex items-center justify-center mb-2">
+                    <MessageCircle className="w-6 h-6" />
+                  </div>
+                  <h4 className="font-semibold text-slate-800 text-xs sm:text-sm">
+                    Direct Channel with {selectedUser.fullName || "User"}
+                  </h4>
+                  <p className="text-[11px] text-slate-400 max-w-xs mt-1">
+                    Send a message to start communicating in real time.
+                  </p>
+                </div>
+              ) : (
+                groupedMessages.map((group) => (
+                  <div key={group.day} className="space-y-3">
+                    {/* Day divider */}
+                    <div className="flex items-center justify-center my-2">
+                      <span className="bg-white border border-slate-200 text-slate-500 text-[10px] font-semibold px-2.5 py-0.5 rounded-full shadow-2xs">
+                        {group.day}
+                      </span>
+                    </div>
 
-        <div className="border-t border-slate-200 bg-white p-3">
-          <div className="chat-composer flex items-end gap-2">
-          <textarea
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                handleSend();
-              }
-            }}
-            placeholder={
-              selectedUser ? "Type a message..." : "Select a user first"
-            }
-            disabled={!selectedUser || !socketConnected}
-            rows={1}
-            className="min-h-11 flex-1 resize-none border-0 bg-transparent px-3 py-2.5 text-sm outline-none"
-          />
+                    {/* Messages in this day */}
+                    {group.items.map((msg, idx) => {
+                      const isMe =
+                        (msg.sender || "").toLowerCase() === currentUserEmail;
+                      const timeStr = msg.sentAt || msg.timestamp
+                        ? new Date(msg.sentAt || msg.timestamp).toLocaleTimeString(
+                            [],
+                            { hour: "2-digit", minute: "2-digit" }
+                          )
+                        : "";
 
-          <button
-            onClick={handleSend}
-            disabled={!selectedUser || !socketConnected || !message.trim()}
-            title="Send message"
-            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-white ${
-              socketConnected && selectedUser && message.trim()
-                ? "bg-blue-600 hover:bg-blue-700"
-                : "bg-gray-400 cursor-not-allowed"
-            }`}
-          >
-            <Send size={18} />
-          </button>
+                      return (
+                        <div
+                          key={msg.id || `msg-${idx}`}
+                          className={`flex flex-col ${
+                            isMe ? "items-end" : "items-start"
+                          }`}
+                        >
+                          <div
+                            className={`max-w-[75%] rounded-2xl px-3.5 py-2 text-xs leading-relaxed shadow-2xs ${
+                              isMe
+                                ? "bg-indigo-600 text-white rounded-br-xs"
+                                : "bg-white text-slate-800 border border-slate-200/80 rounded-bl-xs"
+                            }`}
+                          >
+                            <p className="whitespace-pre-wrap break-words">
+                              {msg.message}
+                            </p>
+                            <div
+                              className={`flex items-center justify-end gap-1 mt-1 text-[9px] ${
+                                isMe ? "text-indigo-200" : "text-slate-400"
+                              }`}
+                            >
+                              <span>{timeStr}</span>
+                              {isMe && (
+                                <span>
+                                  {msg.seen ? (
+                                    <CheckCheck className="w-3 h-3 text-cyan-300" />
+                                  ) : msg.delivered ? (
+                                    <CheckCheck className="w-3 h-3 text-indigo-300" />
+                                  ) : (
+                                    <Check className="w-3 h-3 text-indigo-300" />
+                                  )}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))
+              )}
+              <div ref={messagesEndRef} />
+            </div>
+
+            {/* Input Footer */}
+            <form
+              onSubmit={handleSend}
+              className="p-3 bg-white border-t border-slate-200 flex items-center gap-2"
+            >
+              <input
+                type="text"
+                placeholder={`Message ${selectedUser.fullName || "user"}...`}
+                value={messageText}
+                onChange={(e) => setMessageText(e.target.value)}
+                className="flex-1 px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition"
+              />
+              <button
+                type="submit"
+                disabled={!messageText.trim()}
+                className="p-2.5 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition shadow-sm shrink-0"
+                title="Send message"
+              >
+                <Send className="w-4 h-4" />
+              </button>
+            </form>
+          </>
+        ) : (
+          <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-slate-50/30">
+            <div className="w-14 h-14 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center mb-3">
+              <MessageCircle className="w-7 h-7" />
+            </div>
+            <h3 className="font-bold text-slate-800 text-sm">
+              Select a conversation
+            </h3>
+            <p className="text-xs text-slate-400 max-w-xs mt-1">
+              Choose a contact from the list on the left to start direct messaging.
+            </p>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

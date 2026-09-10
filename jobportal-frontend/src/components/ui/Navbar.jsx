@@ -1,71 +1,142 @@
 import useAuth from "../../hooks/useAuth";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, Link, useNavigate } from "react-router-dom";
+import { Menu, Plus, ChevronRight, Briefcase, Users } from "lucide-react";
+import Button from "../common/Button";
 
-export default function Navbar() {
-  const { user } = useAuth();
+export default function Navbar({ onToggleMobileSidebar }) {
+  const { user, isAdmin, isPartner, isClient } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
-  const rawPath = location.pathname.split("/")[1] || "dashboard";
-  const pageTitle = rawPath.charAt(0).toUpperCase() + rawPath.slice(1);
+
+  // Parse path segments for clean breadcrumbs
+  const pathParts = location.pathname.split("/").filter(Boolean);
+  const rootSegment = pathParts[0] || "dashboard";
+
+  const getBreadcrumbTitle = (segment) => {
+    switch (segment.toLowerCase()) {
+      case "dashboard":
+        return "Dashboard";
+      case "jobs":
+        return "Jobs & Requisitions";
+      case "candidates":
+        return "Talent Directory";
+      case "pipeline":
+        return "Recruitment Pipeline";
+      case "partners":
+        return "Recruitment Partners";
+      case "clients":
+        return "Client Accounts";
+      case "users":
+        return "User Management";
+      case "admins":
+        return "System Administrators";
+      case "messages":
+        return "OmniChannel Messages";
+      case "settings":
+        return "Settings & Preferences";
+      case "create":
+        return "Create New";
+      case "edit":
+        return "Edit Record";
+      default:
+        return segment;
+    }
+  };
+
+  const userInitial = (user?.fullName || "U").charAt(0).toUpperCase();
 
   return (
-    <header className="fixed top-0 left-64 right-0 h-16 bg-surface-container-lowest shadow-[0_1px_8px_rgba(0,0,0,0.04)] border-b border-surface-container z-40 flex items-center justify-between px-6">
-      {/* Left: Breadcrumb & Search */}
-      <div className="flex items-center gap-4">
-        <div className="flex items-center gap-2 text-sm text-on-surface-variant">
-          <span className="font-semibold text-on-surface">Kinetic ATS</span>
-          <span className="material-symbols-outlined text-[16px]">chevron_right</span>
-          <span className="capitalize text-on-surface-variant">{pageTitle}</span>
-        </div>
+    <header className="bg-white/95 backdrop-blur-md h-16 border-b border-slate-200/80 px-6 flex justify-between items-center z-30 sticky top-0 flex-shrink-0">
+      {/* Left: Mobile Toggle & Breadcrumbs */}
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={onToggleMobileSidebar}
+          className="lg:hidden p-2 rounded-xl text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors"
+          title="Open menu"
+        >
+          <Menu className="w-5 h-5" />
+        </button>
 
-        <div className="hidden md:flex items-center bg-surface-container-low rounded-lg px-3 py-1.5 gap-2 w-72 text-on-surface-variant border border-surface-container">
-          <span className="material-symbols-outlined text-[18px]">search</span>
-          <input
-            type="text"
-            placeholder="Search anything..."
-            className="bg-transparent text-xs outline-none flex-1 text-on-surface placeholder:text-outline"
-          />
-          <kbd className="bg-surface-container-highest px-2 py-0.5 rounded font-mono text-[10px] text-on-surface-variant">
-            ⌘K
-          </kbd>
-        </div>
+        <nav className="flex items-center gap-2 text-xs font-medium text-slate-500">
+          <Link
+            to="/dashboard"
+            className="hover:text-indigo-600 transition-colors hidden sm:inline"
+          >
+            Portal
+          </Link>
+
+          {pathParts.length > 0 && (
+            <ChevronRight className="w-3.5 h-3.5 text-slate-400 hidden sm:inline" />
+          )}
+
+          {pathParts.map((part, index) => {
+            const isLast = index === pathParts.length - 1;
+            const routeTo = `/${pathParts.slice(0, index + 1).join("/")}`;
+
+            return (
+              <div key={part} className="flex items-center gap-2">
+                {isLast ? (
+                  <span className="font-bold text-slate-900 text-sm tracking-tight">
+                    {getBreadcrumbTitle(part)}
+                  </span>
+                ) : (
+                  <>
+                    <Link
+                      to={routeTo}
+                      className="hover:text-indigo-600 transition-colors"
+                    >
+                      {getBreadcrumbTitle(part)}
+                    </Link>
+                    <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+                  </>
+                )}
+              </div>
+            );
+          })}
+        </nav>
       </div>
 
-      {/* Right: Controls & Profile */}
-      <div className="flex items-center gap-4">
-        <button
-          className="flex items-center gap-2 bg-surface-container-low px-3 py-2 rounded-lg hover:bg-surface-container text-on-surface transition-colors text-xs font-medium border border-surface-container"
-          type="button"
-        >
-          <span className="w-2 h-2 rounded-full bg-tertiary"></span>
-          <span>Organization HQ</span>
-          <span className="material-symbols-outlined text-[16px] text-on-surface-variant">unfold_more</span>
-        </button>
+      {/* Right: Quick Action & User Info */}
+      <div className="flex items-center gap-3">
+        {/* Role-aware Quick Actions */}
+        {(isAdmin || isClient) && (
+          <Button
+            variant="primary"
+            size="sm"
+            icon={Plus}
+            onClick={() => navigate("/jobs/create")}
+            className="hidden sm:inline-flex"
+          >
+            Create Job
+          </Button>
+        )}
 
-        <button
-          onClick={() => navigate("/jobs/create")}
-          className="inline-flex items-center gap-2 bg-primary text-on-primary px-3.5 py-2 rounded-lg text-xs font-semibold hover:bg-primary-container transition-all shadow-sm"
-          type="button"
-        >
-          <span className="material-symbols-outlined text-[18px]">add</span>
-          <span>Quick Action</span>
-        </button>
+        {isPartner && (
+          <Button
+            variant="primary"
+            size="sm"
+            icon={Plus}
+            onClick={() => navigate("/candidates/create")}
+            className="hidden sm:inline-flex"
+          >
+            Add Candidate
+          </Button>
+        )}
 
-        <button
-          className="relative p-2 text-on-surface-variant hover:text-on-surface hover:bg-surface-container rounded-lg transition-colors"
-          type="button"
-          title="Notifications"
-        >
-          <span className="material-symbols-outlined text-[20px]">notifications</span>
-          <span className="absolute top-1 right-1 px-1.5 py-0.5 rounded-full bg-error text-white text-[10px] font-bold leading-none">
-            4
-          </span>
-        </button>
-
-        <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-white text-xs font-bold shadow-sm">
-          {user?.fullName?.charAt(0).toUpperCase() || (
-            <span className="material-symbols-outlined text-[18px]">person</span>
-          )}
+        {/* User Avatar Circle */}
+        <div className="flex items-center gap-2.5 pl-2 border-l border-slate-200">
+          <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-600 to-purple-600 text-white font-bold text-xs flex items-center justify-center shadow-sm">
+            {userInitial}
+          </div>
+          <div className="hidden md:flex flex-col text-left">
+            <span className="text-xs font-bold text-slate-800 leading-tight">
+              {user?.fullName || "User"}
+            </span>
+            <span className="text-[10px] font-medium text-slate-500">
+              {(user?.role || "GUEST").replace("_", " ")}
+            </span>
+          </div>
         </div>
       </div>
     </header>

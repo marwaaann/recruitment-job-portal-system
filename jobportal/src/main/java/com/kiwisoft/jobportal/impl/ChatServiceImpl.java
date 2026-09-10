@@ -4,28 +4,41 @@ import com.kiwisoft.jobportal.dto.chat.ChatMessage;
 import com.kiwisoft.jobportal.entity.ChatMessageEntity;
 import com.kiwisoft.jobportal.repository.ChatMessageRepository;
 import com.kiwisoft.jobportal.service.ChatService;
-import lombok.RequiredArgsConstructor;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
 import java.util.List;
 
 @Service
-@RequiredArgsConstructor
 public class ChatServiceImpl implements ChatService {
 
     private final SimpMessagingTemplate messagingTemplate;
     private final ChatMessageRepository chatMessageRepository;
 
+    public ChatServiceImpl(
+            SimpMessagingTemplate messagingTemplate,
+            ChatMessageRepository chatMessageRepository
+    ) {
+        this.messagingTemplate = messagingTemplate;
+        this.chatMessageRepository = chatMessageRepository;
+    }
+
     @Override
     public void sendMessage(ChatMessage message) {
 
+        String sender = message.getSender() != null ? message.getSender().trim().toLowerCase() : "";
+        String receiver = message.getReceiver() != null ? message.getReceiver().trim().toLowerCase() : "";
+
+        message.setSender(sender);
+        message.setReceiver(receiver);
+
         // Save to PostgreSQL
         ChatMessageEntity entity = ChatMessageEntity.builder()
-                .sender(message.getSender())
-                .receiver(message.getReceiver())
+                .sender(sender)
+                .receiver(receiver)
                 .message(message.getMessage())
-                .sentAt(message.getTimestamp())
+                .sentAt(message.getTimestamp() != null ? message.getTimestamp() : java.time.LocalDateTime.now())
                 .delivered(false)
                 .seen(false)
                 .build();
@@ -40,23 +53,27 @@ public class ChatServiceImpl implements ChatService {
 
         // Send to receiver
         messagingTemplate.convertAndSend(
-                "/topic/messages/" + message.getReceiver(),
+                "/topic/messages/" + receiver,
                 message
         );
 
-        // Send to sender (so sender sees own message instantly)
-        messagingTemplate.convertAndSend(
-                "/topic/messages/" + message.getSender(),
-                message
-        );
+        // Send to sender (so sender sees own message instantly, only if not same recipient)
+        if (!receiver.equalsIgnoreCase(sender)) {
+            messagingTemplate.convertAndSend(
+                    "/topic/messages/" + sender,
+                    message
+            );
+        }
     }
 
     @Override
-    public List<ChatMessageEntity> getConversation(String user1, String user2) {
+    public java.util.List<ChatMessageEntity> getConversation(String user1, String user2) {
+        String u1 = user1 != null ? user1.trim().toLowerCase() : "";
+        String u2 = user2 != null ? user2.trim().toLowerCase() : "";
         return chatMessageRepository
                 .findBySenderAndReceiverOrReceiverAndSenderOrderBySentAtAsc(
-                        user1, user2,
-                        user2, user1
+                        u1, u2,
+                        u2, u1
                 );
     }
 
@@ -67,10 +84,13 @@ public class ChatServiceImpl implements ChatService {
             String sender,
             String receiver
     ) {
-        List<ChatMessageEntity> messages =
+        String s = sender != null ? sender.trim().toLowerCase() : "";
+        String r = receiver != null ? receiver.trim().toLowerCase() : "";
+
+        java.util.List<ChatMessageEntity> messages =
                 chatMessageRepository.findBySenderAndReceiverAndSeenFalse(
-                        sender,
-                        receiver
+                        s,
+                        r
                 );
 
         messages.forEach(message -> message.setSeen(true));
@@ -88,21 +108,23 @@ public class ChatServiceImpl implements ChatService {
             String sender,
             String receiver
     ) {
+        String s = sender != null ? sender.trim().toLowerCase() : "";
+        String r = receiver != null ? receiver.trim().toLowerCase() : "";
 
-        List<ChatMessageEntity> messages =
+        java.util.List<ChatMessageEntity> messages =
                 chatMessageRepository.findBySenderAndReceiverAndDeliveredFalse(
-                        sender,
-                        receiver
+                        s,
+                        r
                 );
 
         messages.forEach(message -> message.setDelivered(true));
 
         chatMessageRepository.saveAll(messages);
 
-                messages.forEach(message -> messagingTemplate.convertAndSend(
-                                "/topic/messages/" + message.getSender(),
-                                toMessage(message)
-                ));
+        messages.forEach(message -> messagingTemplate.convertAndSend(
+                "/topic/messages/" + message.getSender(),
+                toMessage(message)
+        ));
     }
 
         private ChatMessage toMessage(ChatMessageEntity entity) {

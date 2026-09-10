@@ -1,5 +1,6 @@
 import SockJS from "sockjs-client";
 import { Client } from "@stomp/stompjs";
+import api from "./api";
 
 let stompClient = null;
 
@@ -27,9 +28,17 @@ export const connect = (
   connectionStatusCallback = onConnectionChange;
 
   stompClient = new Client({
-    webSocketFactory: () =>
-      new SockJS("http://localhost:8080/ws-chat"),
+    webSocketFactory: () => {
+      const rawBase =
+        import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
+      const serverBase = rawBase.replace(/\/api\/?$/, "");
+      return new SockJS(`${serverBase}/ws-chat`);
+    },
 
+    connectHeaders: {
+      email: currentUserEmail,
+      user: currentUserEmail,
+    },
     reconnectDelay: 5000,
 
     onConnect: () => {
@@ -222,3 +231,26 @@ export const disconnect = () => {
 
   connectionStatusCallback = null;
 };
+
+/*
+ * Fetch online presence map from REST endpoint
+ */
+export const getOnlinePresence = async () => {
+  try {
+    const res = await api.get("/chat/presence");
+    return res.data || {};
+  } catch (err) {
+    console.warn("Could not fetch online presence:", err?.message || err);
+    return {};
+  }
+};
+
+const ChatService = {
+  connect,
+  disconnect,
+  sendMessage,
+  getConnectionStatus,
+  getOnlinePresence,
+};
+
+export default ChatService;

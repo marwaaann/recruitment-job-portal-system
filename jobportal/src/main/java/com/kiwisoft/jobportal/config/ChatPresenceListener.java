@@ -3,11 +3,11 @@ package com.kiwisoft.jobportal.config;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.event.EventListener;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.messaging.SessionConnectEvent;
 import org.springframework.web.socket.messaging.SessionDisconnectEvent;
 
-import java.security.Principal;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -18,37 +18,55 @@ public class ChatPresenceListener {
 
     private final SimpMessagingTemplate messagingTemplate;
     private final Map<String, AtomicInteger> sessionsByEmail = new ConcurrentHashMap<>();
+    private final Map<String, String> emailBySessionId = new ConcurrentHashMap<>();
 
     @EventListener
     public void onConnect(SessionConnectEvent event) {
-        if (event.getUser() != null) {
-            sessionsByEmail.forEach((email, sessions) -> {
-                if (sessions.get() > 0) {
-                    messagingTemplate.convertAndSendToUser(
-                            event.getUser().getName(),
-                            "/queue/presence",
-                            Map.of("email", email, "online", true)
-                    );
-                }
-            });
+        StompHeaderAccessor accessor = StompHeaderAccessor.wrap(event.getMessage());
+        String email = null;
+        if (event.getUser() != null && event.getUser().getName() != null) {
+            email = event.getUser().getName();
+        } else if (accessor.getFirstNativeHeader("user") != null) {
+            email = accessor.getFirstNativeHeader("user");
+        } else if (accessor.getFirstNativeHeader("email") != null) {
+            email = accessor.getFirstNativeHeader("email");
         }
 
-        publishPresence(event.getUser(), true);
+        if (email != null && !email.isBlank()) {
+            email = email.trim().toLowerCase();
+            String sessionId = accessor.getSessionId();
+            if (sessionId != null) {
+                emailBySessionId.put(sessionId, email);
+            }
+            registerPresence(email, true);
+        }
     }
 
     @EventListener
     public void onDisconnect(SessionDisconnectEvent event) {
-        publishPresence(event.getUser(), false);
+        StompHeaderAccessor accessor = StompHeaderAccessor.wrap(event.getMessage());
+        String sessionId = accessor.getSessionId();
+        String email = null;
+        if (event.getUser() != null && event.getUser().getName() != null) {
+            email = event.getUser().getName();
+        } else if (sessionId != null) {
+            email = emailBySessionId.remove(sessionId);
+        }
+
+        if (email != null && !email.isBlank()) {
+            email = email.trim().toLowerCase();
+            registerPresence(email, false);
+        }
     }
 
-    private void publishPresence(Principal principal, boolean connected) {
-        if (principal == null || principal.getName() == null) {
+    public void registerPresence(String email, boolean connected) {
+        if (email == null || email.isBlank()) {
             return;
         }
 
-        String email = principal.getName();
+        String normalized = email.trim().toLowerCase();
         AtomicInteger sessions = sessionsByEmail.computeIfAbsent(
-                email,
+                normalized,
                 ignored -> new AtomicInteger()
         );
 
@@ -58,13 +76,24 @@ public class ChatPresenceListener {
         } else {
             online = sessions.updateAndGet(count -> Math.max(0, count - 1)) > 0;
             if (!online) {
-                sessionsByEmail.remove(email, sessions);
+                sessionsByEmail.remove(normalized);
             }
         }
 
         messagingTemplate.convertAndSend(
                 "/topic/presence",
-                Map.of("email", email, "online", online)
+                Map.of("email", normalized, "online", online)
         );
     }
+
+    public Map<String, Boolean> getOnlineUsers() {
+        Map<String, Boolean> result = new ConcurrentHashMap<>();
+        sessionsByEmail.forEach((email, count) -> {
+            if (count.get() > 0) {
+                result.put(email, true);
+            }
+        });
+        return result;
+    }
 }
+

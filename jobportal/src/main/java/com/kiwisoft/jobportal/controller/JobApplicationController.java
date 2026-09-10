@@ -23,7 +23,7 @@ public class JobApplicationController {
     @PostMapping("/{jobId}/applications")
     public JobApplicationResponse applyJob(
             @PathVariable Long jobId,
-            @RequestParam Long partnerId,
+            @RequestParam(required = false) Long partnerId,
             @RequestBody JobApplicationRequest request
     ) {
 

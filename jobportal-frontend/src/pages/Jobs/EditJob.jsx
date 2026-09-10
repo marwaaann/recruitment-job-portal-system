@@ -1,201 +1,300 @@
-import { useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Briefcase, Building2, CircleAlert } from "lucide-react";
+import { useState, useEffect } from "react";
+import { useParams, useNavigate, Link } from "react-router-dom";
+import {
+  Briefcase,
+  ArrowLeft,
+  Building2,
+  Users,
+  FileText,
+  CheckCircle2,
+  AlertCircle,
+} from "lucide-react";
+import useAuth from "../../hooks/useAuth";
 import { getJobById, updateJob } from "../../services/jobService";
 import { getAllClients } from "../../services/clientService";
+import Button from "../../components/common/Button";
+import Input from "../../components/common/Input";
+import Textarea from "../../components/common/Textarea";
+import Badge from "../../components/common/Badge";
+import Card, {
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+  CardFooter,
+} from "../../components/common/Card";
+import { CardSkeleton } from "../../components/common/SkeletonLoader";
+import { useToast } from "../../components/common/Toast";
 
 export default function EditJob() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { isAdmin } = useAuth();
+  const { success, error: toastError } = useToast();
 
-  const [clients, setClients] = useState([]);
-  const [form, setForm] = useState({
-    title: "",
-    description: "",
-    vacancyCount: "",
-    clientId: "",
-  });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
+  const [job, setJob] = useState(null);
+  const [client, setClient] = useState(null);
+
+  const [form, setForm] = useState({
+    title: "",
+    vacancyCount: "1",
+    description: "",
+  });
+
+  const [formErrors, setFormErrors] = useState({});
 
   useEffect(() => {
-    loadData();
+    const loadJobAndClient = async () => {
+      setLoading(true);
+      try {
+        const [jobData, clientList] = await Promise.all([
+          getJobById(id),
+          getAllClients().catch(() => []),
+        ]);
+
+        setJob(jobData);
+        setForm({
+          title: jobData?.title || "",
+          vacancyCount: String(jobData?.vacancyCount ?? 1),
+          description: jobData?.description || "",
+        });
+
+        if (jobData?.clientId && Array.isArray(clientList)) {
+          const matched = clientList.find(
+            (c) => String(c.id) === String(jobData.clientId)
+          );
+          if (matched) setClient(matched);
+        }
+      } catch (err) {
+        console.error("Failed to load job details:", err);
+        toastError("Unable to retrieve job requisition details.");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadJobAndClient();
   }, [id]);
 
-  const loadData = async () => {
-    try {
-      setLoading(true);
-      const [jobData, clientList] = await Promise.all([
-        getJobById(id),
-        getAllClients().catch(() => []),
-      ]);
-
-      setClients(Array.isArray(clientList) ? clientList : []);
-      setForm({
-        title: jobData.title || "",
-        description: jobData.description || "",
-        vacancyCount: jobData.vacancyCount ?? 1,
-        clientId: jobData.clientId || "",
-      });
-    } catch (err) {
-      console.error(err);
-      setError("Unable to load job details.");
-    } finally {
-      setLoading(false);
+  const validate = () => {
+    const errors = {};
+    if (!form.title.trim()) {
+      errors.title = "Job title is required.";
     }
+    if (!form.vacancyCount || Number(form.vacancyCount) < 1) {
+      errors.vacancyCount = "Vacancies must be at least 1.";
+    }
+    if (!form.description.trim()) {
+      errors.description = "Job description is required.";
+    }
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
   };
 
   const handleChange = (e) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
+    const { name, value } = e.target;
+    setForm((prev) => ({ ...prev, [name]: value }));
+    if (formErrors[name]) {
+      setFormErrors((prev) => ({ ...prev, [name]: "" }));
+    }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!validate()) return;
 
-    if (!form.title.trim() || !form.description.trim() || Number(form.vacancyCount) < 1) {
-      setError("Please fill in all required fields (title, vacancies, and description).");
-      return;
-    }
-
+    setSaving(true);
     try {
-      setSaving(true);
-      setError("");
-
-      await updateJob(id, {
+      const payload = {
         title: form.title.trim(),
-        description: form.description.trim(),
         vacancyCount: Number(form.vacancyCount),
-      });
+        description: form.description.trim(),
+      };
 
-      alert("Job updated successfully!");
+      await updateJob(id, payload);
+      success("Job requisition updated successfully!");
       navigate(`/jobs/${id}`);
     } catch (err) {
-      console.error(err);
-      setError(err.response?.data?.message || "Failed to update job position.");
+      console.error("Failed to update job:", err);
+      toastError(
+        err.response?.data?.message ||
+          "Failed to update requisition. Please try again."
+      );
     } finally {
       setSaving(false);
     }
   };
 
   if (loading) {
-    return <div className="p-10 text-xl font-semibold text-slate-600">Loading Job...</div>;
+    return (
+      <div className="max-w-4xl mx-auto space-y-6">
+        <div className="h-6 w-36 bg-slate-200 rounded animate-pulse" />
+        <CardSkeleton rows={5} />
+      </div>
+    );
   }
 
-  const linkedClient = clients.find((c) => String(c.id) === String(form.clientId));
+  if (!job) {
+    return (
+      <div className="max-w-xl mx-auto py-12 text-center">
+        <div className="w-12 h-12 rounded-full bg-red-50 text-red-500 mx-auto flex items-center justify-center mb-4">
+          <AlertCircle className="w-6 h-6" />
+        </div>
+        <h2 className="text-xl font-bold text-slate-900 mb-2">
+          Requisition Not Found
+        </h2>
+        <p className="text-sm text-slate-500 mb-6">
+          The requested job position ID #{id} does not exist or has been removed.
+        </p>
+        <Button variant="primary" onClick={() => navigate("/jobs")}>
+          Return to Requisitions
+        </Button>
+      </div>
+    );
+  }
 
   return (
-    <div className="max-w-4xl mx-auto py-6">
-      <button
-        onClick={() => navigate(`/jobs/${id}`)}
-        className="flex items-center gap-2 text-blue-600 hover:text-blue-800 mb-6 font-medium transition"
-      >
-        <ArrowLeft size={18} />
-        Back to job details
-      </button>
+    <div className="max-w-4xl mx-auto space-y-6 pb-12">
+      {/* Back Link */}
+      <div>
+        <Link
+          to={`/jobs/${id}`}
+          className="inline-flex items-center gap-2 text-sm font-medium text-slate-500 hover:text-indigo-600 transition-colors"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          Back to Requisition #{id}
+        </Link>
+      </div>
 
-      <div className="bg-white rounded-2xl shadow p-8">
-        <div className="flex items-center gap-4 mb-8">
-          <div className="w-14 h-14 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shadow-sm">
-            <Briefcase size={28} />
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shadow-sm">
+            <Briefcase className="w-6 h-6" />
           </div>
           <div>
-            <h1 className="text-3xl font-bold text-slate-900">Edit Job Position</h1>
-            <p className="text-slate-500 text-sm mt-1">Update job title, vacancies, and requirement details</p>
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
+                Edit Requisition
+              </h1>
+              <Badge status={job.status || "OPEN"} />
+            </div>
+            <p className="text-sm text-slate-500">
+              Requisition #{job.id} &bull; Created{" "}
+              {job.createdAt
+                ? new Date(job.createdAt).toLocaleDateString()
+                : "Recently"}
+            </p>
           </div>
         </div>
 
-        {error && (
-          <div className="mb-6 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-            <CircleAlert size={18} />
-            {error}
+        {client && (
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-100 border border-slate-200 text-xs font-medium text-slate-700">
+            <Building2 className="w-3.5 h-3.5 text-slate-500" />
+            <span>
+              Client: <strong>{client.company || client.companyName || client.fullName}</strong>
+            </span>
           </div>
         )}
+      </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">
-                Job Title *
-              </label>
-              <input
-                type="text"
-                name="title"
-                value={form.title}
-                onChange={handleChange}
-                required
-                className="w-full border rounded-lg p-3 text-slate-900 focus:outline-blue-500"
-                placeholder="e.g. Senior Java Backend Developer"
-              />
-            </div>
+      {/* Form Card */}
+      <form onSubmit={handleSubmit}>
+        <Card>
+          <CardHeader>
+            <CardTitle>Requisition Specifications</CardTitle>
+            <CardDescription>
+              Modify title, open vacancies, and position scope.
+            </CardDescription>
+          </CardHeader>
 
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">
-                Number of Vacancies *
-              </label>
-              <input
-                type="number"
-                name="vacancyCount"
-                min="1"
-                value={form.vacancyCount}
-                onChange={handleChange}
-                required
-                className="w-full border rounded-lg p-3 text-slate-900 focus:outline-blue-500"
-                placeholder="e.g. 5"
-              />
-            </div>
-
-            <div className="md:col-span-2">
-              <label className="block text-sm font-semibold text-slate-700 mb-2">
-                Associated Client / Company
-              </label>
-              <div className="w-full border rounded-lg p-3 bg-slate-50 text-slate-700 flex items-center gap-3">
-                <Building2 size={18} className="text-blue-600 shrink-0" />
-                <span className="font-medium">
-                  {linkedClient?.company || linkedClient?.companyName || linkedClient?.fullName || `Client #${form.clientId || "N/A"}`}
-                </span>
-                {linkedClient?.email && (
-                  <span className="text-slate-400 text-sm">({linkedClient.email})</span>
-                )}
+          <CardContent className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Title */}
+              <div className="md:col-span-2">
+                <Input
+                  label="Job Title *"
+                  name="title"
+                  value={form.title}
+                  onChange={handleChange}
+                  error={formErrors.title}
+                  icon={Briefcase}
+                  required
+                />
               </div>
-              <p className="text-xs text-slate-400 mt-1">
-                Client reference is set when creating the position to preserve audit history.
-              </p>
-            </div>
 
-            <div className="md:col-span-2">
-              <label className="block text-sm font-semibold text-slate-700 mb-2">
-                Job Description & Requirements *
-              </label>
-              <textarea
-                name="description"
-                rows={8}
-                value={form.description}
-                onChange={handleChange}
-                required
-                className="w-full border rounded-lg p-3 text-slate-900 focus:outline-blue-500 resize-y leading-relaxed"
-                placeholder="Describe role, responsibilities, technical requirements, qualifications, and benefits..."
-              />
-            </div>
-          </div>
+              {/* Vacancy Count */}
+              <div>
+                <Input
+                  label="Number of Vacancies *"
+                  name="vacancyCount"
+                  type="number"
+                  min="1"
+                  value={form.vacancyCount}
+                  onChange={handleChange}
+                  error={formErrors.vacancyCount}
+                  icon={Users}
+                  required
+                />
+              </div>
 
-          <div className="flex justify-end gap-4 pt-6 border-t">
-            <Link
-              to={`/jobs/${id}`}
-              className="px-6 py-2.5 rounded-lg border border-slate-300 font-medium text-slate-700 hover:bg-slate-50 transition"
+              {/* Associated Client Info (Read only) */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                  Associated Client
+                </label>
+                <div className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-700 text-sm">
+                  <Building2 className="w-4 h-4 text-slate-400 shrink-0" />
+                  <span className="font-medium truncate">
+                    {client?.company ||
+                      client?.companyName ||
+                      client?.fullName ||
+                      `Client ID: #${job.clientId || "N/A"}`}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-slate-400">
+                  Client association is immutable once requisition is published.
+                </p>
+              </div>
+
+              {/* Description */}
+              <div className="md:col-span-2">
+                <Textarea
+                  label="Job Description & Requirements *"
+                  name="description"
+                  rows={8}
+                  value={form.description}
+                  onChange={handleChange}
+                  error={formErrors.description}
+                  required
+                />
+              </div>
+            </div>
+          </CardContent>
+
+          <CardFooter className="flex items-center justify-between border-t border-slate-100 bg-slate-50/50 p-6">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => navigate(`/jobs/${id}`)}
+              disabled={saving}
             >
               Cancel
-            </Link>
-            <button
+            </Button>
+
+            <Button
               type="submit"
-              disabled={saving}
-              className="bg-blue-600 text-white px-6 py-2.5 rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 transition"
+              variant="primary"
+              loading={saving}
+              icon={CheckCircle2}
             >
-              {saving ? "Saving Changes..." : "Update Job"}
-            </button>
-          </div>
-        </form>
-      </div>
+              {saving ? "Saving Changes..." : "Save Changes"}
+            </Button>
+          </CardFooter>
+        </Card>
+      </form>
     </div>
   );
 }

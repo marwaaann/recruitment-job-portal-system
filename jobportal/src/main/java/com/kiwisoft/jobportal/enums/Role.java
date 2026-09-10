@@ -10,4 +10,6 @@ public enum Role {
 
     CLIENT,
 
+    CANDIDATE
+
 }

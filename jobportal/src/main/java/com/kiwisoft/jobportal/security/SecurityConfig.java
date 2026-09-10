@@ -48,7 +48,8 @@ public class SecurityConfig {
                                 "/api/auth/register",
                                 "/api/auth/refresh",
                                 "/api/auth/forgot-password",
-                                "/api/auth/reset-password"
+                                "/api/auth/reset-password",
+                                "/ws-chat/**"
 
                         )
 
@@ -69,11 +70,12 @@ public class SecurityConfig {
                         .requestMatchers("/api/csrf")
                         .permitAll()
 
-                        .requestMatchers("/")
+                        .requestMatchers("/", "/error")
                         .permitAll()
 
+                        // WebSocket & SockJS handshake
                         .requestMatchers("/ws-chat/**")
-                        .authenticated()
+                        .permitAll()
 
                         // ================= SUPER ADMIN =================
                         .requestMatchers("/api/admins/**")
@@ -113,7 +115,7 @@ public class SecurityConfig {
                         .requestMatchers(org.springframework.http.HttpMethod.GET,
                                 "/api/candidates",
                                 "/api/candidates/**")
-                        .hasAnyRole("SUPER_ADMIN","ADMIN","CLIENT","PARTNER")
+                        .hasAnyRole("SUPER_ADMIN","ADMIN","CLIENT","PARTNER","CANDIDATE")
 
                         // Update Candidate
                         .requestMatchers(org.springframework.http.HttpMethod.PUT,
@@ -159,12 +161,12 @@ public class SecurityConfig {
                         // Apply Job
                         .requestMatchers(org.springframework.http.HttpMethod.POST,
                                 "/api/jobs/*/applications")
-                        .hasRole("PARTNER")
+                        .hasAnyRole("SUPER_ADMIN", "ADMIN", "PARTNER", "CANDIDATE")
 
                         // View Applications
                         .requestMatchers(org.springframework.http.HttpMethod.GET,
                                 "/api/jobs/*/applications")
-                        .hasAnyRole("SUPER_ADMIN","ADMIN","CLIENT")
+                        .hasAnyRole("SUPER_ADMIN", "ADMIN", "CLIENT", "PARTNER", "CANDIDATE")
 
                         .anyRequest()
                         .authenticated()

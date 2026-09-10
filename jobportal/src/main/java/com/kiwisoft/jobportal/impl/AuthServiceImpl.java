@@ -1,12 +1,26 @@
 package com.kiwisoft.jobportal.impl;
 
+import com.kiwisoft.jobportal.dto.request.ForgotPasswordRequest;
 import com.kiwisoft.jobportal.dto.request.LoginRequest;
-
+import com.kiwisoft.jobportal.dto.request.LogoutRequest;
 import com.kiwisoft.jobportal.dto.request.RegisterRequest;
+import com.kiwisoft.jobportal.dto.request.ResetPasswordRequest;
 import com.kiwisoft.jobportal.dto.response.AuthResponse;
+import com.kiwisoft.jobportal.entity.Client;
+import com.kiwisoft.jobportal.entity.Candidate;
+import com.kiwisoft.jobportal.entity.Partner;
+import com.kiwisoft.jobportal.entity.PasswordResetOtp;
 import com.kiwisoft.jobportal.entity.RefreshToken;
 import com.kiwisoft.jobportal.entity.User;
+import com.kiwisoft.jobportal.enums.CandidateStatus;
 import com.kiwisoft.jobportal.enums.Role;
+import com.kiwisoft.jobportal.exception.BadRequestException;
+import com.kiwisoft.jobportal.exception.ResourceNotFoundException;
+import com.kiwisoft.jobportal.exception.UnauthorizedException;
+import com.kiwisoft.jobportal.repository.CandidateRepository;
+import com.kiwisoft.jobportal.repository.ClientRepository;
+import com.kiwisoft.jobportal.repository.PartnerRepository;
+import com.kiwisoft.jobportal.repository.PasswordResetOtpRepository;
 import com.kiwisoft.jobportal.repository.RefreshTokenRepository;
 import com.kiwisoft.jobportal.repository.UserRepository;
 import com.kiwisoft.jobportal.security.CookieUtil;
@@ -14,29 +28,15 @@ import com.kiwisoft.jobportal.security.JwtUtil;
 import com.kiwisoft.jobportal.service.AuthService;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
-import com.kiwisoft.jobportal.dto.request.LogoutRequest;
-import java.time.LocalDateTime;
 import org.springframework.transaction.annotation.Transactional;
-import com.kiwisoft.jobportal.exception.BadRequestException;
-import com.kiwisoft.jobportal.exception.ResourceNotFoundException;
-import com.kiwisoft.jobportal.exception.UnauthorizedException;
-import java.util.Random;
 
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
-import jakarta.servlet.http.Cookie;
-import com.kiwisoft.jobportal.dto.request.ForgotPasswordRequest;
-import com.kiwisoft.jobportal.entity.PasswordResetOtp;
-import com.kiwisoft.jobportal.repository.PasswordResetOtpRepository;
-import com.kiwisoft.jobportal.exception.ResourceNotFoundException;
-import jakarta.servlet.http.HttpServletResponse;
-import com.kiwisoft.jobportal.dto.request.ResetPasswordRequest;
-import com.kiwisoft.jobportal.entity.PasswordResetOtp;
-import com.kiwisoft.jobportal.exception.BadRequestException;
+import java.time.LocalDateTime;
+import java.util.Random;
 
 @Slf4j
 @Service
@@ -46,6 +46,9 @@ public class AuthServiceImpl implements AuthService {
     private final UserRepository userRepository;
     private final RefreshTokenRepository refreshTokenRepository;
     private final PasswordResetOtpRepository passwordResetOtpRepository;
+    private final PartnerRepository partnerRepository;
+    private final ClientRepository clientRepository;
+    private final CandidateRepository candidateRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
     private final CookieUtil cookieUtil;
@@ -57,18 +60,78 @@ public class AuthServiceImpl implements AuthService {
             throw new BadRequestException("Email already exists");
         }
 
+        Role assignedRole = request.getRole() != null ? request.getRole() : Role.CLIENT;
+        // Restrict public self-registration to CLIENT, PARTNER, or CANDIDATE for security
+        if (assignedRole != Role.CLIENT && assignedRole != Role.PARTNER && assignedRole != Role.CANDIDATE) {
+            assignedRole = Role.CLIENT;
+        }
+
         User user = User.builder()
                 .fullName(request.getFullName())
                 .email(request.getEmail())
                 .password(passwordEncoder.encode(request.getPassword()))
-                .role(Role.CLIENT)
+                .role(assignedRole)
                 .active(true)
                 .build();
 
-        userRepository.save(user);
+        User savedUser = userRepository.save(user);
+
+        if (assignedRole == Role.PARTNER) {
+            try {
+                String company = request.getCompany() != null && !request.getCompany().isBlank()
+                        ? request.getCompany()
+                        : request.getFullName() + " Agency";
+                Partner partner = Partner.builder()
+                        .companyName(company)
+                        .contactPerson(request.getFullName())
+                        .email(request.getEmail())
+                        .phone(request.getPhone())
+                        .user(savedUser)
+                        .active(true)
+                        .build();
+                partnerRepository.save(partner);
+            } catch (Exception e) {
+                log.warn("Failed to create partner record for registered user: {}", e.getMessage());
+            }
+        } else if (assignedRole == Role.CLIENT) {
+            try {
+                String company = request.getCompany() != null && !request.getCompany().isBlank()
+                        ? request.getCompany()
+                        : request.getFullName();
+                Client client = Client.builder()
+                        .fullName(request.getFullName())
+                        .email(request.getEmail())
+                        .phone(request.getPhone())
+                        .company(company)
+                        .active(true)
+                        .build();
+                clientRepository.save(client);
+            } catch (Exception e) {
+                log.warn("Failed to create client record for registered user: {}", e.getMessage());
+            }
+        } else if (assignedRole == Role.CANDIDATE) {
+            try {
+                Candidate candidate = Candidate.builder()
+                        .fullName(request.getFullName())
+                        .email(request.getEmail())
+                        .phoneNormalized(request.getPhone())
+                        .createdByUserId(savedUser.getId())
+                        .canonicalStatus(CandidateStatus.ACTIVE)
+                        .createdAt(LocalDateTime.now())
+                        .updatedAt(LocalDateTime.now())
+                        .build();
+                candidateRepository.save(candidate);
+            } catch (Exception e) {
+                log.warn("Failed to create candidate record for registered user: {}", e.getMessage());
+            }
+        }
 
         return AuthResponse.builder()
                 .message("User Registered Successfully")
+                .id(savedUser.getId())
+                .fullName(savedUser.getFullName())
+                .email(savedUser.getEmail())
+                .role(savedUser.getRole())
                 .build();
     }
 
@@ -109,6 +172,7 @@ public class AuthServiceImpl implements AuthService {
         refreshTokenRepository.save(refreshTokenEntity);
 
         return AuthResponse.builder()
+                .accessToken(accessToken)
                 .message("Login Successful")
                 .id(user.getId())
                 .fullName(user.getFullName())
@@ -168,6 +232,7 @@ public class AuthServiceImpl implements AuthService {
         );
 
         return AuthResponse.builder()
+                .accessToken(newAccessToken)
                 .message("Token Refreshed Successfully")
                 .build();
     }

@@ -25,8 +25,10 @@ public class ChatMessageEntity {
     @Column(columnDefinition = "TEXT")
     private String message;
 
+    @Builder.Default
     private boolean seen = false;
 
+    @Builder.Default
     private boolean delivered = false;
 
     private LocalDateTime sentAt;

@@ -1,62 +1,77 @@
-import { createContext, useEffect, useState } from "react";
+import { createContext, useEffect, useState, useMemo } from "react";
+import ChatService from "../services/ChatService";
 
 const AuthContext = createContext();
 
 export function AuthProvider({ children }) {
+  const [user, setUser] = useState(() => {
+    try {
+      const saved = localStorage.getItem("user");
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
 
-    const [user, setUser] = useState(() => {
+  const [loading, setLoading] = useState(false);
 
-        const saved = localStorage.getItem("user");
+  const login = (userData) => {
+    localStorage.setItem("user", JSON.stringify(userData));
+    setUser(userData);
+  };
 
-        return saved ? JSON.parse(saved) : null;
+  const logout = () => {
+    try {
+      ChatService.disconnect();
+    } catch (e) {
+      // ignore
+    }
+    localStorage.removeItem("user");
+    setUser(null);
+  };
 
-    });
+  useEffect(() => {
+    if (user) {
+      localStorage.setItem("user", JSON.stringify(user));
+    }
+  }, [user]);
 
-    const [loading] = useState(false);
+  const role = user?.role || "";
+  const isSuperAdmin = role === "SUPER_ADMIN";
+  const isAdmin = role === "ADMIN" || isSuperAdmin;
+  const isPartner = role === "PARTNER";
+  const isClient = role === "CLIENT";
+  const isCandidate = role === "CANDIDATE";
 
-    const login = (userData) => {
+  const hasRole = (...roles) => {
+    if (!role) return false;
+    if (isSuperAdmin) return true; // Super admin has authority across modules
+    return roles.flat().includes(role);
+  };
 
-        localStorage.setItem("user", JSON.stringify(userData));
+  const contextValue = useMemo(
+    () => ({
+      user,
+      role,
+      isSuperAdmin,
+      isAdmin,
+      isPartner,
+      isClient,
+      isCandidate,
+      hasRole,
+      login,
+      logout,
+      loading,
+      setLoading,
+    }),
+    [user, role, loading]
+  );
 
-        setUser(userData);
-
-    };
-
-    const logout = () => {
-
-        localStorage.removeItem("user");
-
-        setUser(null);
-
-    };
-
-    useEffect(() => {
-
-        if (user) {
-
-            localStorage.setItem("user", JSON.stringify(user));
-
-        }
-
-    }, [user]);
-
-    return (
-
-        <AuthContext.Provider
-            value={{
-                user,
-                login,
-                logout,
-                loading,
-            }}
-        >
-
-            {children}
-
-        </AuthContext.Provider>
-
-    );
-
+  return (
+    <AuthContext.Provider value={contextValue}>
+      {children}
+    </AuthContext.Provider>
+  );
 }
 
-export default AuthContext;
+export default AuthContext;
