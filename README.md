@@ -1,6 +1,6 @@
 <div align="center">
 
-# 💼 Recruitment & Job Portal System (Kinetic ATS)
+# 💼 Recruitment & Job Portal System 
 
 **Enterprise-Grade Applicant Tracking System & Talent Acquisition Platform**
 
